@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0051cc;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px 0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 API Connection Test</h1>
+        <p>Use this page to test the connection between frontend and backend.</p>
+
+        <div class="test-section">
+            <h3>Configuration</h3>
+            <label>Backend URL:</label>
+            <input type="text" id="backendUrl" value="http://localhost:3000" placeholder="http://localhost:3000">
+            <label>Admin Token (optional):</label>
+            <input type="text" id="adminToken" placeholder="Leave empty for public endpoints">
+            <button onclick="testAll()">Test All Connections</button>
+        </div>
+
+        <div class="test-section">
+            <h3>1. Health Check</h3>
+            <button onclick="testHealth()">Test Health Endpoint</button>
+            <div id="healthResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>2. Templates Endpoint</h3>
+            <button onclick="testTemplates()">Test Templates Endpoint</button>
+            <div id="templatesResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>3. Analytics Endpoint</h3>
+            <button onclick="testAnalytics()">Test Analytics Endpoint</button>
+            <div id="analyticsResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>4. CORS Test</h3>
+            <button onclick="testCORS()">Test CORS Configuration</button>
+            <div id="corsResult"></div>
+        </div>
+    </div>
+
+    <script>
+        function getBackendUrl() {
+            return document.getElementById('backendUrl').value || 'http://localhost:3000';
+        }
+
+        function getHeaders() {
+            const token = document.getElementById('adminToken').value;
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (token) {
+                headers['X-ADMIN-TOKEN'] = token;
+            }
+            return headers;
+        }
+
+        function showResult(elementId, success, message, data = null) {
+            const element = document.getElementById(elementId);
+            const className = success ? 'success' : 'error';
+            let content = `<div class="result ${className}">`;
+            content += `<strong>${success ? '✅ Success' : '❌ Error'}:</strong><br>`;
+            content += message;
+            if (data) {
+                content += `<br><br><strong>Response:</strong><br>`;
+                content += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+            content += `</div>`;
+            element.innerHTML = content;
+        }
+
+        async function testHealth() {
+            try {
+                const url = getBackendUrl() + '/api/health';
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('healthResult', true, `Backend is reachable at ${url}`, data);
+                } else {
+                    showResult('healthResult', false, `Backend returned status ${response.status}`, data);
+                }
+            } catch (error) {
+                showResult('healthResult', false, `Connection failed: ${error.message}. Make sure backend is running.`);
+            }
+        }
+
+        async function testTemplates() {
+            try {
+                const url = getBackendUrl() + '/api/templates?limit=5';
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const count = data.data?.length || 0;
+                    showResult('templatesResult', true, `Loaded ${count} templates`, data);
+                } else {
+                    showResult('templatesResult', false, `Request failed with status ${response.status}`, data);
+                }
+            } catch (error) {
+                showResult('templatesResult', false, `Connection failed: ${error.message}`);
+            }
+        }
+
+        async function testAnalytics() {
+            try {
+                const url = getBackendUrl() + '/api/analytics';
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('analyticsResult', true, 'Analytics data loaded successfully', data);
+                } else {
+                    showResult('analyticsResult', false, `Request failed with status ${response.status}`, data);
+                }
+            } catch (error) {
+                showResult('analyticsResult', false, `Connection failed: ${error.message}`);
+            }
+        }
+
+        async function testCORS() {
+            try {
+                const url = getBackendUrl() + '/api/health';
+                const response = await fetch(url, {
+                    method: 'OPTIONS',
+                    headers: getHeaders()
+                });
+                
+                const corsHeaders = {
+                    'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Methods': response.headers.get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers': response.headers.get('Access-Control-Allow-Headers')
+                };
+                
+                if (corsHeaders['Access-Control-Allow-Origin']) {
+                    showResult('corsResult', true, 'CORS is configured correctly', corsHeaders);
+                } else {
+                    showResult('corsResult', false, 'CORS headers not found. Check backend configuration.', corsHeaders);
+                }
+            } catch (error) {
+                showResult('corsResult', false, `CORS test failed: ${error.message}`);
+            }
+        }
+
+        async function testAll() {
+            document.getElementById('healthResult').innerHTML = '<div class="result info">Testing...</div>';
+            document.getElementById('templatesResult').innerHTML = '<div class="result info">Testing...</div>';
+            document.getElementById('analyticsResult').innerHTML = '<div class="result info">Testing...</div>';
+            document.getElementById('corsResult').innerHTML = '<div class="result info">Testing...</div>';
+
+            await testHealth();
+            await new Promise(r => setTimeout(r, 500));
+            await testTemplates();
+            await new Promise(r => setTimeout(r, 500));
+            await testAnalytics();
+            await new Promise(r => setTimeout(r, 500));
+            await testCORS();
+        }
+
+        // Auto-test on load if backend URL is set
+        window.addEventListener('load', () => {
+            const backendUrl = getBackendUrl();
+            if (backendUrl && backendUrl !== 'http://localhost:3000') {
+                console.log('Backend URL configured:', backendUrl);
+            }
+        });
+    </script>
+</body>
+</html>
+
