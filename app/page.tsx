@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { MessageSquare, BarChart3, Send, RefreshCw, Target, Database, TrendingUp, Users } from "lucide-react";
 import { fetchTemplates, fetchAnalytics, Template, AnalyticsData } from "@/lib/api";
 import { getTemplatesFromCache, setTemplatesCache } from "@/lib/template-cache";
+import { config } from "@/lib/config";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -23,14 +24,43 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
+      // Log API base URL for debugging
+      console.log('[Dashboard] Loading data from API:', config.apiUrl);
+
       // Try global cache first for templates
       let templates = getTemplatesFromCache();
       
       if (!templates) {
         console.log('Dashboard: Cache miss - fetching templates from API');
-        const templatesResponse = await fetchTemplates(15);
-        templates = templatesResponse.data || [];
-        setTemplatesCache(templates);
+        try {
+          const templatesResponse = await fetchTemplates(15);
+          templates = templatesResponse.data || [];
+          setTemplatesCache(templates);
+          console.log(`[Dashboard] Successfully loaded ${templates.length} templates`);
+        } catch (error) {
+          // Extract error properties explicitly for proper logging
+          const errorDetails = {
+            message: error instanceof Error ? error.message : String(error),
+            name: error instanceof Error ? error.name : typeof error,
+            stack: error instanceof Error ? error.stack : undefined,
+            cause: error instanceof Error && 'cause' in error ? error.cause : undefined,
+            apiBase: config.apiUrl,
+            timestamp: new Date().toISOString()
+          };
+          
+          console.error('[Dashboard] Failed to fetch templates:', error);
+          console.error('[Dashboard] Error details:', errorDetails);
+          
+          // Log additional CORS-specific guidance if applicable
+          if (error instanceof Error && error.message.includes('CORS')) {
+            console.error('[Dashboard] CORS Error Detected!');
+            console.error('[Dashboard] Backend CORS must allow requests from:', window.location.origin);
+            console.error('[Dashboard] Backend URL:', config.apiUrl);
+          }
+          
+          // Set empty templates array on error
+          templates = [];
+        }
       } else {
         console.log('Dashboard: Cache hit - using cached templates');
       }
@@ -41,8 +71,28 @@ export default function Dashboard() {
       try {
         const analyticsResponse = await fetchAnalytics();
         setAnalytics(analyticsResponse);
+        console.log('[Dashboard] Successfully loaded analytics');
       } catch (error) {
-        console.error('Failed to load analytics:', error);
+        // Extract error properties explicitly for proper logging
+        const errorDetails = {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : typeof error,
+          stack: error instanceof Error ? error.stack : undefined,
+          cause: error instanceof Error && 'cause' in error ? error.cause : undefined,
+          apiBase: config.apiUrl,
+          timestamp: new Date().toISOString()
+        };
+        
+        console.error('[Dashboard] Failed to load analytics:', error);
+        console.error('[Dashboard] Analytics error details:', errorDetails);
+        
+        // Log additional CORS-specific guidance if applicable
+        if (error instanceof Error && error.message.includes('CORS')) {
+          console.error('[Dashboard] CORS Error Detected!');
+          console.error('[Dashboard] Backend CORS must allow requests from:', window.location.origin);
+          console.error('[Dashboard] Backend URL:', config.apiUrl);
+        }
+        
         // Set default analytics data if fetch fails
         setAnalytics({
           totalConversations: 0,
@@ -60,7 +110,17 @@ export default function Dashboard() {
         });
       }
     } catch (error) {
-      console.error('Failed to load dashboard data:', error);
+      // Extract error properties explicitly for proper logging
+      const errorDetails = {
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        cause: error instanceof Error && 'cause' in error ? error.cause : undefined,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.error('[Dashboard] Failed to load dashboard data:', error);
+      console.error('[Dashboard] Error details:', errorDetails);
     } finally {
       setLoading(false);
     }
