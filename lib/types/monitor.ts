@@ -59,6 +59,7 @@ export interface Message {
     forwardedFrom?: string;
     errorCode?: string;
     errorMessage?: string;
+    errorType?: 'quality_policy' | 'technical';
     retryCount?: number;
   };
 }
@@ -139,6 +140,7 @@ export interface MessageBubble {
     forwardedFrom?: string;
     errorCode?: string;
     errorMessage?: string;
+    errorType?: 'quality_policy' | 'technical';
     retryCount?: number;
   };
 }
@@ -147,6 +149,9 @@ export interface MessageStatusIndicatorProps {
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   timestamp?: string;
   className?: string;
+  errorMessage?: string;
+  errorCode?: string;
+  errorType?: 'quality_policy' | 'technical';
 }
 
 export interface ConversationMetadata {

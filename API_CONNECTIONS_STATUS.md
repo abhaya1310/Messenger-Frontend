@@ -6,14 +6,23 @@ All API connections are properly configured and active in the frontend code.
 
 ## Configuration Location
 
-**File**: `lib/api.ts`
+**Files**:
+- `lib/config.ts` (central config)
+- `lib/api.ts` (API client)
 
 **Base URL Configuration**:
 ```typescript
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+// lib/config.ts
+export const config = {
+  apiUrl: getApiUrl(), // uses NEXT_PUBLIC_BACKEND_URL
+  adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
+} as const;
+
+// lib/api.ts
+const API_BASE = config.apiUrl;
 ```
 
-This constant is used by **all API functions** to make direct calls to the backend.
+This configuration is used by **all API functions** to make direct calls to the backend.
 
 ## Active API Endpoints
 
@@ -53,12 +62,12 @@ This constant is used by **all API functions** to make direct calls to the backe
 All API calls follow this pattern:
 
 ```typescript
-// Direct backend call using API_BASE
-const response = await fetch(`${API_BASE}/endpoint`, {
+// Direct backend call using config.apiUrl
+const response = await fetch(`${config.apiUrl}/endpoint`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'X-ADMIN-TOKEN': process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
+    'X-ADMIN-TOKEN': config.adminToken,
   },
   body: JSON.stringify(data),
 });
@@ -68,10 +77,10 @@ const response = await fetch(`${API_BASE}/endpoint`, {
 
 ### Code Verification
 
-✅ **All functions use `API_BASE`** - No hardcoded URLs  
+✅ **All functions use `config.apiUrl`** - No hardcoded backend URLs  
 ✅ **No `window.location.origin` dependencies** - Works with separated deployment  
 ✅ **Consistent pattern** - All endpoints use same base URL  
-✅ **Environment variable support** - Uses `NEXT_PUBLIC_BACKEND_URL`
+✅ **Environment variable support** - Uses `NEXT_PUBLIC_BACKEND_URL` via `lib/config.ts`
 
 ### Runtime Verification
 

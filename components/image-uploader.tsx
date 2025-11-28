@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Upload, X, Image as ImageIcon } from 'lucide-react';
 import Image from 'next/image';
+import { config } from '@/lib/config';
 
 interface ImageUploaderProps {
   onUploadComplete: (mediaId: string) => void;
@@ -68,14 +69,14 @@ export function ImageUploader({
       const formData = new FormData();
       formData.append('file', file);
 
-      // Call backend API directly (not Next.js route)
-      const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      
+      // Call backend API directly (not Next.js route), using shared config
+      const API_BASE = config.apiUrl;
+
       const response = await fetch(`${API_BASE}/api/media/upload`, {
         method: 'POST',
         body: formData,
         headers: {
-          'X-ADMIN-TOKEN': process.env.NEXT_PUBLIC_ADMIN_TOKEN || ''
+          'X-ADMIN-TOKEN': config.adminToken,
         }
       });
 

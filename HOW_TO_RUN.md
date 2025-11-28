@@ -166,6 +166,18 @@ npm start
 # Minified code
 ```
 
+### Deploying to Vercel (Summary)
+
+For cloud hosting with Vercel:
+
+1. Create a Vercel project with the root directory set to `Messenger-Frontend/`.
+2. Use the default build command `npm run build`.
+3. In Vercel project settings, configure environment variables:
+   - `NEXT_PUBLIC_BACKEND_URL` → your backend URL (for example, `https://csat-cloud.vercel.app`).
+   - `NEXT_PUBLIC_ADMIN_TOKEN` → optional admin token for browser-side calls.
+   - `BACKEND_URL` and `ADMIN_TOKEN` → server-side values for `app/api/*` proxy routes.
+4. Make sure the backend’s CORS configuration allows your Vercel domain.
+
 ## Stopping the Server
 
 Press `Ctrl + C` in the terminal to stop the development server.

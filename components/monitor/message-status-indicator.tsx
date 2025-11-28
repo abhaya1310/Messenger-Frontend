@@ -2,11 +2,15 @@
 
 import { cn } from "@/lib/utils";
 import { MessageStatusIndicatorProps } from "@/lib/types/monitor";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function MessageStatusIndicator({ 
   status, 
   timestamp, 
-  className 
+  className,
+  errorMessage,
+  errorCode,
+  errorType
 }: MessageStatusIndicatorProps) {
   const getStatusIcon = () => {
     switch (status) {
@@ -95,6 +99,46 @@ export function MessageStatusIndicator({
       return `${days}d`;
     }
   };
+
+  // For failed messages, show error details in tooltip
+  if (status === 'failed' && (errorMessage || errorCode)) {
+    const errorDisplay = errorMessage || `Error code: ${errorCode}`;
+    const isQualityError = errorType === 'quality_policy';
+    
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className={cn("flex items-center space-x-1 text-xs cursor-help", className)}>
+              {getStatusIcon()}
+              {timestamp && (
+                <span className="text-gray-500">
+                  {formatTimestamp(timestamp)}
+                </span>
+              )}
+              {isQualityError && (
+                <span className="text-orange-500 text-[10px]">⚠️</span>
+              )}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs">
+            <div className="space-y-1">
+              <div className="font-semibold text-red-500">Message Failed</div>
+              {errorCode && (
+                <div className="text-xs text-gray-400">Code: {errorCode}</div>
+              )}
+              <div className="text-sm">{errorDisplay}</div>
+              {isQualityError && (
+                <div className="text-xs text-orange-500 mt-1 pt-1 border-t border-orange-500/20">
+                  ⚠️ Quality Policy Violation - Review account metrics
+                </div>
+              )}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <div className={cn("flex items-center space-x-1 text-xs", className)}>

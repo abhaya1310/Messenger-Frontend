@@ -49,11 +49,26 @@ function getApiUrl(): string {
 
   // Warn if using default in production
   if (typeof window !== 'undefined' && apiUrl === defaultUrl && !window.location.hostname.includes('localhost')) {
-    console.warn(
-      'NEXT_PUBLIC_BACKEND_URL is not set. Using default localhost URL. ' +
-      'This may cause connection errors in production. ' +
-      'Please set NEXT_PUBLIC_BACKEND_URL in your environment variables.'
+    const isProduction = !window.location.hostname.includes('localhost') && 
+                         !window.location.hostname.includes('127.0.0.1');
+    
+    console.error(
+      '⚠️ PRODUCTION CONFIGURATION ERROR:\n' +
+      'NEXT_PUBLIC_BACKEND_URL is not set. Using default localhost URL.\n' +
+      'This will cause connection errors in production.\n\n' +
+      'Please set NEXT_PUBLIC_BACKEND_URL in your environment variables:\n' +
+      `  - For AWS deployment: Set to your Vercel backend URL (e.g., https://csat-cloud.vercel.app)\n` +
+      `  - Current hostname: ${window.location.hostname}\n` +
+      `  - Current origin: ${window.location.origin}`
     );
+    
+    if (isProduction) {
+      // In production, this is a critical error
+      console.error(
+        '\n🚨 CRITICAL: Frontend is deployed but backend URL is not configured.\n' +
+        'All API calls will fail. Update NEXT_PUBLIC_BACKEND_URL immediately.'
+      );
+    }
   }
 
   return apiUrl;

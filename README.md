@@ -95,10 +95,17 @@ Frontend (Next.js)          Backend (Express)
 
 ### API Base URL Configuration
 
-The API base URL is configured in `lib/api.ts`:
+The API base URL is configured via `lib/config.ts` and used in `lib/api.ts`:
 
 ```typescript
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+// lib/config.ts
+export const config = {
+  apiUrl: getApiUrl(), // uses NEXT_PUBLIC_BACKEND_URL
+  adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
+} as const;
+
+// lib/api.ts
+const API_BASE = config.apiUrl;
 ```
 
 **All API calls** use this base URL:
@@ -323,7 +330,7 @@ Next.js automatically reloads when you make changes to:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `NEXT_PUBLIC_BACKEND_URL` | Backend API URL | `http://localhost:3000` |
+| `NEXT_PUBLIC_BACKEND_URL` | Backend API URL (browser + server) | `http://localhost:3000` |
 
 ### Optional Variables
 
@@ -331,6 +338,8 @@ Next.js automatically reloads when you make changes to:
 |----------|-------------|---------|
 | `NEXT_PUBLIC_ADMIN_TOKEN` | Admin token for protected endpoints | (empty) |
 | `NEXT_PUBLIC_DEFAULT_ORG_ID` | Default organization ID | `default` |
+| `BACKEND_URL` | Backend URL for Next.js API route proxies (server only) | `http://localhost:3000` |
+| `ADMIN_TOKEN` | Admin token for server-side proxies (server only) | (empty) |
 
 ### Environment File
 
@@ -348,6 +357,8 @@ NEXT_PUBLIC_DEFAULT_ORG_ID=demo-org
 ```
 
 **Note**: Variables prefixed with `NEXT_PUBLIC_` are exposed to the browser. Never put sensitive secrets in these variables.
+
+For **server-only** variables (`BACKEND_URL`, `ADMIN_TOKEN`), set them in your deployment platform (for example, Vercel project settings) instead of committing them to `.env.local`.
 
 ## Project Structure
 
@@ -462,7 +473,23 @@ npm install
 
 See [DEPLOYMENT.md](../DEPLOYMENT.md) for complete deployment instructions.
 
-**Quick Production Build**:
+### Deploying to Vercel
+
+High-level steps:
+
+1. Create a new project in Vercel and select this repository.
+2. In **Root Directory**, choose `Messenger-Frontend/` so Vercel finds `package.json` and the `app/` directory.
+3. Leave the **Framework Preset** as **Next.js**.
+4. Use the default install command (`npm install`) and build command (`npm run build`).
+5. In the Vercel **Environment Variables** tab, configure:
+   - `NEXT_PUBLIC_BACKEND_URL` → your production backend URL (for example, `https://csat-cloud.vercel.app`).
+   - `NEXT_PUBLIC_ADMIN_TOKEN` → optional, only if you rely on browser-side admin actions.
+   - `NEXT_PUBLIC_DEFAULT_ORG_ID` → optional.
+   - `BACKEND_URL` → same backend URL, used by `app/api/*` proxy routes.
+   - `ADMIN_TOKEN` → server-side admin token matching the backend.
+6. Ensure your backend CORS configuration allows your Vercel domain(s) as origins.
+
+**Quick Production Build (self-hosted Node)**:
 ```bash
 npm run build
 npm start

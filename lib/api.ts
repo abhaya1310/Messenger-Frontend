@@ -206,6 +206,7 @@ export interface Message {
     forwardedFrom?: string;
     errorCode?: string;
     errorMessage?: string;
+    errorType?: 'quality_policy' | 'technical';
     retryCount?: number;
   };
   createdAt: string;
@@ -497,7 +498,22 @@ export async function fetchConversations(params: {
     },
   });
   
-  return res.json();
+  const data: ConversationsResponse = await res.json();
+  
+  // Defensive deduplication: remove duplicates by _id
+  if (data.conversations && Array.isArray(data.conversations)) {
+    const seen = new Set<string>();
+    data.conversations = data.conversations.filter(conv => {
+      const id = String(conv._id);
+      if (seen.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+  }
+  
+  return data;
 }
 
 export async function fetchConversationMessages(

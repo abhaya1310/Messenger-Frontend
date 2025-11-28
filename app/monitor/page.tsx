@@ -71,6 +71,19 @@ export default function MonitorPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Helper function to deduplicate conversations by _id
+  const deduplicateConversations = useCallback((conversations: ConversationListItem[]): ConversationListItem[] => {
+    const seen = new Set<string>();
+    return conversations.filter(conv => {
+      const id = String(conv._id);
+      if (seen.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+  }, []);
+
   // Load conversations
   const loadConversations = useCallback(async (reset = false) => {
     if (loading.conversations) return;
@@ -85,17 +98,24 @@ export default function MonitorPage() {
         skip
       });
 
+      // Deduplicate conversations before setting state
+      const deduplicatedNew = deduplicateConversations(response.conversations);
+
       if (reset) {
-        setConversations(response.conversations);
+        setConversations(deduplicatedNew);
       } else {
-        setConversations(prev => [...prev, ...response.conversations]);
+        setConversations(prev => {
+          // Combine existing and new, then deduplicate
+          const combined = [...prev, ...deduplicatedNew];
+          return deduplicateConversations(combined);
+        });
       }
 
       setPagination(prev => ({
         ...prev,
         conversations: {
           ...prev.conversations,
-          skip: skip + response.conversations.length,
+          skip: skip + deduplicatedNew.length,
           hasMore: response.hasMore
         }
       }));
@@ -104,7 +124,7 @@ export default function MonitorPage() {
     } finally {
       setLoading(prev => ({ ...prev, conversations: false }));
     }
-  }, [filters, pagination.conversations, loading.conversations]);
+  }, [filters, pagination.conversations, loading.conversations, deduplicateConversations]);
 
   // Load messages for selected conversation
   const loadMessages = useCallback(async (conversationId: string, reset = false) => {
@@ -198,11 +218,15 @@ export default function MonitorPage() {
         metadata: { ...prev.metadata, ...metadata }
       } : null);
       
-      setConversations(prev => prev.map(conv => 
-        conv._id === selectedConversation._id 
-          ? { ...conv, metadata: { ...conv.metadata, ...metadata } }
-          : conv
-      ));
+      setConversations(prev => {
+        const updated = prev.map(conv => 
+          conv._id === selectedConversation._id 
+            ? { ...conv, metadata: { ...conv.metadata, ...metadata } }
+            : conv
+        );
+        // Defensive deduplication after update
+        return deduplicateConversations(updated);
+      });
     } catch (error) {
       console.error('Failed to update metadata:', error);
     } finally {

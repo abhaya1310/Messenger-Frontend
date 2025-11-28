@@ -100,7 +100,7 @@ export function ConversationList({
 
     return (
       <div
-        key={conv._id}
+        key={String(conv._id)}
         onClick={() => onSelectConversation(conv._id)}
         className={cn(
           "flex items-center space-x-3 p-3 cursor-pointer border-b border-gray-100",
@@ -390,7 +390,7 @@ export function CompactConversationList({
 
           return (
             <div
-              key={conv._id}
+              key={String(conv._id)}
               onClick={() => onSelectConversation(conv._id)}
               className={cn(
                 "flex items-center space-x-2 p-2 cursor-pointer rounded-lg",

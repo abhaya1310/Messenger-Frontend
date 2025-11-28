@@ -243,6 +243,9 @@ export function MessageThread({
                   <MessageStatusIndicator 
                     status={message.status} 
                     timestamp={message.timestamp}
+                    errorMessage={message.metadata?.errorMessage}
+                    errorCode={message.metadata?.errorCode}
+                    errorType={message.metadata?.errorType as 'quality_policy' | 'technical' | undefined}
                   />
                 )}
               </div>
@@ -407,6 +410,9 @@ export function CompactMessageThread({
                 <MessageStatusIndicator 
                   status={message.status} 
                   className="text-xs"
+                  errorMessage={message.metadata?.errorMessage}
+                  errorCode={message.metadata?.errorCode}
+                  errorType={message.metadata?.errorType as 'quality_policy' | 'technical' | undefined}
                 />
               )}
             </div>

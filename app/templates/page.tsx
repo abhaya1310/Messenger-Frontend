@@ -242,31 +242,31 @@ export default function TemplatesPage() {
             return (
               <Card key={template.name} className="hover:shadow-lg transition-shadow flex flex-col h-full">
                 <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{template.name}</CardTitle>
-                      <CardDescription className="flex items-center mt-1 space-x-2">
-                        <span className={`text-sm font-medium ${getCategoryColor(template.category)}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-lg mb-2">{template.name}</CardTitle>
+                      <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                        <span className={`text-sm font-medium whitespace-nowrap ${getCategoryColor(template.category)}`}>
                           {template.category}
                         </span>
-                        <span>•</span>
-                        <span className="text-sm text-gray-500">{template.language}</span>
-                        <span>•</span>
-                        <span className="text-sm text-blue-600 font-medium">
+                        <span className="text-gray-400" aria-hidden="true">•</span>
+                        <span className="text-sm text-gray-500 whitespace-nowrap">{template.language}</span>
+                        <span className="text-gray-400" aria-hidden="true">•</span>
+                        <span className="text-sm text-blue-600 font-medium whitespace-nowrap">
                           {variableCount} variable{variableCount !== 1 ? 's' : ''}
                         </span>
                         {hasFlowComponent(template) && (
                           <>
-                            <span>•</span>
-                            <span className="text-sm text-purple-600 font-medium flex items-center">
-                              <Workflow className="h-3 w-3 mr-1" />
+                            <span className="text-gray-400" aria-hidden="true">•</span>
+                            <span className="text-sm text-purple-600 font-medium whitespace-nowrap inline-flex items-center">
+                              <Workflow className="h-3 w-3 mr-1 flex-shrink-0" />
                               Flow
                             </span>
                           </>
                         )}
                       </CardDescription>
                     </div>
-                    <Badge variant={getStatusBadgeVariant(template.status)}>
+                    <Badge variant={getStatusBadgeVariant(template.status)} className="flex-shrink-0">
                       {template.status}
                     </Badge>
                   </div>
@@ -280,24 +280,24 @@ export default function TemplatesPage() {
                       </p>
                     </div>
                     
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <div className="flex items-center">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        <span>Modified: {new Date(template.modified_time).toLocaleDateString()}</span>
+                    <div className="flex items-center justify-between text-xs text-gray-500 gap-2">
+                      <div className="flex items-center min-w-0">
+                        <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
+                        <span className="truncate">Modified: {new Date(template.modified_time).toLocaleDateString()}</span>
                       </div>
                       {variableCount > 0 && (
-                        <div className="flex items-center text-blue-600">
-                          <MessageSquare className="h-3 w-3 mr-1" />
+                        <div className="flex items-center text-blue-600 whitespace-nowrap flex-shrink-0">
+                          <MessageSquare className="h-3 w-3 mr-1 flex-shrink-0" />
                           <span>Dynamic</span>
                         </div>
                       )}
                     </div>
                   </div>
                   
-                  <div className="flex space-x-2 pt-4 mt-auto">
+                  <div className="flex gap-2 pt-4 mt-auto">
                     <Button asChild size="sm" className="flex-1">
-                      <Link href={`/templates/${template.name}/send`}>
-                        <MessageSquare className="h-4 w-4 mr-2" />
+                      <Link href={`/templates/${template.name}/send`} className="flex items-center justify-center">
+                        <MessageSquare className="h-4 w-4 mr-2 flex-shrink-0" />
                         Send
                       </Link>
                     </Button>
@@ -305,6 +305,7 @@ export default function TemplatesPage() {
                       variant="outline" 
                       size="sm"
                       onClick={() => handlePreview(template)}
+                      className="flex-shrink-0"
                     >
                       Preview
                     </Button>

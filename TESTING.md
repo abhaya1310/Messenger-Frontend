@@ -80,7 +80,7 @@ fetch('http://localhost:3000/api/templates?limit=5')
 
 ### Method 3: Test HTML Page
 
-1. **Open** `test-api-connection.html` in browser
+1. **Open** `test-api-connection.html` in browser (from `public/` or the deployed site)
 2. **Enter backend URL**: `http://localhost:3000`
 3. **Click "Test All Connections"**
 4. **Review results** for each endpoint
@@ -240,6 +240,16 @@ npm run build
 2. Check API response times
 3. Verify no unnecessary requests
 4. Check for failed requests
+
+## Testing a Vercel Deployment
+
+When the frontend is deployed to Vercel:
+
+1. Open the deployed URL (for example, `https://your-project.vercel.app`).
+2. Navigate to `/templates`, `/analytics`, and `/monitor` to confirm pages load without errors.
+3. In DevTools → Network, verify all API calls go to the configured `NEXT_PUBLIC_BACKEND_URL` domain (not `localhost`).
+4. Open `/test-api-connection.html` on the deployed site and run **Test All Connections** against your production backend URL.
+5. If you see CORS errors, update the backend’s allowed origins to include your Vercel domain(s) and redeploy the backend.
 
 ## API Endpoints Status
 

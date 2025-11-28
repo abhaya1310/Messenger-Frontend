@@ -80,6 +80,18 @@ fetch('http://localhost:3000/api/health')
 - Check backend `.env` has `FRONTEND_URL=http://localhost:3001`
 - Restart backend after changing CORS settings
 
+## Deploying to Vercel (Very Short Version)
+
+To host the frontend on Vercel:
+
+1. Import this repo into Vercel and set the project root to `Messenger-Frontend/`.
+2. Keep the framework as **Next.js** and the build command as `npm run build`.
+3. In Vercel environment variables, set:
+   - `NEXT_PUBLIC_BACKEND_URL` to your backend URL (for example, `https://csat-cloud.vercel.app`).
+   - `NEXT_PUBLIC_ADMIN_TOKEN` if needed.
+   - `BACKEND_URL` and `ADMIN_TOKEN` for server-side proxy routes under `app/api`.
+4. Update the backend CORS config to allow your Vercel domain.
+
 ## 📚 More Help
 
 - **Full Documentation**: See [README.md](./README.md)
