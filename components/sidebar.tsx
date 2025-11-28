@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   MessageSquare,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "./sidebar-provider";
+import { useAuth } from "./auth-provider";
 
 interface NavItem {
   title: string;
@@ -54,9 +55,11 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const { logout } = useAuth();
 
   // Check if mobile on mount and resize
   useEffect(() => {
@@ -83,6 +86,11 @@ export function Sidebar() {
 
   const closeMobile = () => {
     setIsMobileOpen(false);
+  };
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
   };
 
   // Mobile: Drawer overlay
@@ -160,6 +168,17 @@ export function Sidebar() {
                 })}
               </ul>
             </nav>
+
+            {/* Footer */}
+            <div className="border-t border-gray-200 p-4">
+              <Button
+                variant="outline"
+                className="w-full justify-center"
+                onClick={handleLogout}
+              >
+                Logout
+              </Button>
+            </div>
           </div>
         </aside>
       </>
@@ -229,6 +248,17 @@ export function Sidebar() {
             })}
           </ul>
         </nav>
+
+        {/* Footer */}
+        <div className="border-t border-gray-200 p-4">
+          <Button
+            variant="outline"
+            className="w-full justify-center"
+            onClick={handleLogout}
+          >
+            Logout
+          </Button>
+        </div>
       </div>
     </aside>
   );
