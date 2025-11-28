@@ -41,25 +41,19 @@ async function fetchWithErrorHandling(
         !urlString.startsWith(window.location.origin) &&
         (urlString.startsWith('http://') || urlString.startsWith('https://'));
 
-      let errorMessage = `Network request failed. This usually indicates:\n` +
-        `1. Backend server is not reachable at: ${urlString}\n` +
-        `2. CORS is not configured on the backend\n` +
-        `3. Network connectivity issues\n\n` +
-        `Please verify:\n` +
-        `- NEXT_PUBLIC_BACKEND_URL is set correctly: ${API_BASE}\n` +
-        `- Backend server is running and accessible\n`;
-
-      if (isCorsLikely) {
-        errorMessage += `\n⚠️ CORS CONFIGURATION REQUIRED:\n` +
-          `Your backend at ${API_BASE} must allow CORS requests from:\n` +
-          `  Origin: ${frontendOrigin}\n\n` +
-          `Backend CORS configuration should include:\n` +
-          `  Access-Control-Allow-Origin: ${frontendOrigin}\n` +
-          `  Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\n` +
-          `  Access-Control-Allow-Headers: Content-Type, X-ADMIN-TOKEN, X-ORG-ID\n`;
-      } else {
-        errorMessage += `- Backend CORS allows requests from: ${frontendOrigin}`;
-      }
+      let errorMessage = `Cannot connect to backend at ${API_BASE}.\n\n` +
+        `This is likely a CORS (Cross-Origin Resource Sharing) issue.\n\n` +
+        `Your backend at ${API_BASE} must allow requests from your frontend origin:\n` +
+        `  Frontend Origin: ${frontendOrigin}\n\n` +
+        `To fix this, configure CORS on your backend to allow requests from:\n` +
+        `  ${frontendOrigin}\n\n` +
+        `Backend CORS configuration should include:\n` +
+        `  Access-Control-Allow-Origin: ${frontendOrigin} (or * for development)\n` +
+        `  Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\n` +
+        `  Access-Control-Allow-Headers: Content-Type, X-ADMIN-TOKEN, X-ORG-ID\n\n` +
+        `If you're using Express.js, add:\n` +
+        `  app.use(cors({ origin: '${frontendOrigin}' }));\n\n` +
+        `Or set FRONTEND_URL environment variable in your backend to: ${frontendOrigin}`;
 
       throw new Error(errorMessage);
     }
@@ -222,11 +216,11 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
   try {
     const res = await fetchWithErrorHandling(url.toString());
     const data = await res.json();
-    
+
     // Log the response for debugging
     console.log('[fetchTemplates] Response status:', res.status);
     console.log('[fetchTemplates] Response data:', data);
-    
+
     // Check if the response contains an error
     if (data.error) {
       console.error('[fetchTemplates] Backend error:', data);
@@ -237,7 +231,7 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
       }
       throw new Error(errorMsg);
     }
-    
+
     // Check if data.data exists and is an array
     if (!data.data || !Array.isArray(data.data)) {
       console.warn('[fetchTemplates] Unexpected response format:', data);
@@ -245,7 +239,7 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
         throw new Error('Backend returned empty templates. This might indicate WABA_ID is not set in your backend environment variables.');
       }
     }
-    
+
     return data;
   } catch (error) {
     console.error('[fetchTemplates] Error:', error);

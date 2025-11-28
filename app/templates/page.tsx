@@ -348,11 +348,26 @@ export default function TemplatesPage() {
                 <div className="text-xs text-gray-500 space-y-1">
                   {error?.includes('WABA_ID') ? (
                     <p>Make sure WABA_ID is set in your <strong>backend</strong> environment variables if you have a WhatsApp Business Account.</p>
-                  ) : error?.includes('NEXT_PUBLIC_BACKEND_URL') || error?.includes('Cannot connect') ? (
+                  ) : error?.includes('NEXT_PUBLIC_BACKEND_URL') || error?.includes('Cannot connect') || error?.includes('CORS') ? (
                     <div className="space-y-1">
-                      <p>⚠️ <strong>Configuration Issue:</strong> NEXT_PUBLIC_BACKEND_URL is not set or incorrect.</p>
-                      <p>In Vercel, set <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_BACKEND_URL</code> to your backend URL (e.g., https://your-backend.vercel.app)</p>
-                      <p className="text-gray-400 mt-2">Note: BACKEND_URL is different - you need NEXT_PUBLIC_BACKEND_URL for the frontend.</p>
+                      {error?.includes('CORS') ? (
+                        <>
+                          <p>⚠️ <strong>CORS Configuration Issue:</strong> Your backend is blocking cross-origin requests.</p>
+                          <p className="text-sm">The backend at <code className="bg-gray-100 px-1 rounded">https://csat-cloud.vercel.app</code> needs to allow requests from your frontend origin.</p>
+                          <p className="text-sm mt-2"><strong>To fix this, update your backend CORS configuration:</strong></p>
+                          <ul className="text-sm list-disc list-inside mt-1 space-y-1">
+                            <li>Set <code className="bg-gray-100 px-1 rounded">FRONTEND_URL</code> environment variable in your backend to your frontend URL</li>
+                            <li>Or configure CORS middleware to allow your frontend origin</li>
+                            <li>Make sure OPTIONS requests are handled for CORS preflight</li>
+                          </ul>
+                        </>
+                      ) : (
+                        <>
+                          <p>⚠️ <strong>Configuration Issue:</strong> NEXT_PUBLIC_BACKEND_URL is not set or incorrect.</p>
+                          <p>In Vercel, set <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_BACKEND_URL</code> to your backend URL (e.g., https://your-backend.vercel.app)</p>
+                          <p className="text-gray-400 mt-2">Note: BACKEND_URL is different - you need NEXT_PUBLIC_BACKEND_URL for the frontend.</p>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <p>Check the browser console (F12) for detailed error information.</p>
