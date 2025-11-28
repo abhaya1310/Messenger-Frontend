@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { ConversationFiltersProps, ConversationFilters } from "@/lib/types/monitor";
+import type { ConversationFiltersProps, ConversationFilters } from "@/lib/types/monitor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,13 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Filter, 
-  X, 
-  Calendar, 
-  Tag, 
-  Building, 
-  MessageSquare, 
+import {
+  Filter,
+  X,
+  Calendar,
+  Tag,
+  Building,
+  MessageSquare,
   Clock,
   ChevronDown,
   ChevronUp
