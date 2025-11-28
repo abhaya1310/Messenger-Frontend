@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { ConversationFiltersTypeProps, ConversationFiltersType as ConversationFiltersTypeType } from "@/lib/types/monitor";
+import { ConversationFiltersProps, ConversationFilters } from "@/lib/types/monitor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,22 +29,22 @@ export function ConversationFilters({
   availableTags = [],
   availableTemplates = [],
   className
-}: ConversationFiltersTypeProps) {
+}: ConversationFiltersProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [localFilters, setLocalFilters] = useState<ConversationFiltersType>(filters);
+  const [localFilters, setLocalFilters] = useState<ConversationFilters>(filters);
 
   useEffect(() => {
     setLocalFilters(filters);
   }, [filters]);
 
-  const handleFilterChange = (key: keyof ConversationFiltersType, value: any) => {
+  const handleFilterChange = (key: keyof ConversationFilters, value: any) => {
     const newFilters = { ...localFilters, [key]: value };
     setLocalFilters(newFilters);
     onFiltersChange(newFilters);
   };
 
   const handleClearFilters = () => {
-    const clearedFilters: ConversationFiltersType = {};
+    const clearedFilters: ConversationFilters = {};
     setLocalFilters(clearedFilters);
     onClearFilters();
   };
@@ -298,28 +298,28 @@ export function ConversationFilters({
 }
 
 // Compact version for smaller spaces
-export function CompactConversationFiltersType({
+export function CompactConversationFilters({
   filters,
   onFiltersChange,
   onClearFilters,
   availableTags = [],
   availableTemplates = [],
   className
-}: ConversationFiltersTypeProps) {
-  const [localFilters, setLocalFilters] = useState<ConversationFiltersType>(filters);
+}: ConversationFiltersProps) {
+  const [localFilters, setLocalFilters] = useState<ConversationFilters>(filters);
 
   useEffect(() => {
     setLocalFilters(filters);
   }, [filters]);
 
-  const handleFilterChange = (key: keyof ConversationFiltersType, value: any) => {
+  const handleFilterChange = (key: keyof ConversationFilters, value: any) => {
     const newFilters = { ...localFilters, [key]: value };
     setLocalFilters(newFilters);
     onFiltersChange(newFilters);
   };
 
   const handleClearFilters = () => {
-    const clearedFilters: ConversationFiltersType = {};
+    const clearedFilters: ConversationFilters = {};
     setLocalFilters(clearedFilters);
     onClearFilters();
   };
@@ -451,12 +451,12 @@ export function FilterChips({
   onRemoveFilter,
   className
 }: {
-  filters: ConversationFiltersType;
-  onRemoveFilter: (key: keyof ConversationFiltersType) => void;
+  filters: ConversationFilters;
+  onRemoveFilter: (key: keyof ConversationFilters) => void;
   className?: string;
 }) {
   const getFilterChips = () => {
-    const chips: Array<{ key: keyof ConversationFiltersType; label: string; value: string }> = [];
+    const chips: Array<{ key: keyof ConversationFilters; label: string; value: string }> = [];
 
     if (filters.status && filters.status.length > 0) {
       chips.push({
