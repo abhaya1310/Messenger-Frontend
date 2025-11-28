@@ -4,7 +4,8 @@ import React, { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MessageSquare, CheckCircle, AlertCircle, Target } from "lucide-react";
-import { Template, TemplateAnalysis, ColumnMapping } from "@/lib/types/mapping";
+import type { Template } from "@/lib/api";
+import type { TemplateAnalysis, ColumnMapping } from "@/lib/types/mapping";
 
 interface LiveTemplatePreviewProps {
   template: Template | null;
@@ -50,12 +51,12 @@ export function LiveTemplatePreview({
     while ((match = variableRegex.exec(preview)) !== null) {
       const variableIndex = parseInt(match[1]);
       const mappedColumn = columnMapping[variableIndex];
-      
+
       // Add text before variable
       if (match.index > lastIndex) {
         previewParts.push(preview.substring(lastIndex, match.index));
       }
-      
+
       // Add highlighted variable
       if (mappedColumn && firstRow[mappedColumn]?.trim()) {
         const value = firstRow[mappedColumn].trim();
@@ -74,7 +75,7 @@ export function LiveTemplatePreview({
         );
         unmappedVariables.push(variableIndex);
       }
-      
+
       lastIndex = match.index + match[0].length;
     }
 
@@ -187,7 +188,7 @@ export function LiveTemplatePreview({
                       {previewData.previewParts.length > 0 ? previewData.previewParts : (previewData.preview || template.components.find(c => c.type === 'BODY')?.text || 'No message content')}
                     </p>
                   </div>
-                  
+
                   <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
                     <span>WhatsApp</span>
                     <span>now</span>
@@ -247,10 +248,10 @@ export function LiveTemplatePreview({
               </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ 
-                  width: `${previewData.totalVariables > 0 ? (previewData.mappedCount / previewData.totalVariables) * 100 : 0}%` 
+                style={{
+                  width: `${previewData.totalVariables > 0 ? (previewData.mappedCount / previewData.totalVariables) * 100 : 0}%`
                 }}
               />
             </div>
