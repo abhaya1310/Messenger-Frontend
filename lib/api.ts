@@ -14,7 +14,7 @@ async function fetchWithErrorHandling(
   options?: RequestInit
 ): Promise<Response> {
   const urlString = typeof url === 'string' ? url : url.toString();
-  
+
   // Log the URL being requested (only in development or when debugging)
   if (typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || window.location.search.includes('debug=true'))) {
     console.log(`[API] Fetching: ${urlString}`);
@@ -22,7 +22,7 @@ async function fetchWithErrorHandling(
 
   try {
     const response = await fetch(urlString, options);
-    
+
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
       throw new Error(
@@ -31,16 +31,16 @@ async function fetchWithErrorHandling(
         `Response: ${errorText}`
       );
     }
-    
+
     return response;
   } catch (error) {
     // Enhance error message with URL context
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
       const frontendOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
-      const isCorsLikely = typeof window !== 'undefined' && 
+      const isCorsLikely = typeof window !== 'undefined' &&
         !urlString.startsWith(window.location.origin) &&
         (urlString.startsWith('http://') || urlString.startsWith('https://'));
-      
+
       let errorMessage = `Network request failed. This usually indicates:\n` +
         `1. Backend server is not reachable at: ${urlString}\n` +
         `2. CORS is not configured on the backend\n` +
@@ -48,7 +48,7 @@ async function fetchWithErrorHandling(
         `Please verify:\n` +
         `- NEXT_PUBLIC_BACKEND_URL is set correctly: ${API_BASE}\n` +
         `- Backend server is running and accessible\n`;
-      
+
       if (isCorsLikely) {
         errorMessage += `\n⚠️ CORS CONFIGURATION REQUIRED:\n` +
           `Your backend at ${API_BASE} must allow CORS requests from:\n` +
@@ -60,7 +60,7 @@ async function fetchWithErrorHandling(
       } else {
         errorMessage += `- Backend CORS allows requests from: ${frontendOrigin}`;
       }
-      
+
       throw new Error(errorMessage);
     }
     throw error;
@@ -91,43 +91,15 @@ export interface Template {
   modified_time: string;
 }
 
-export interface TemplateVariable {
-  index: number;
-  type: 'text' | 'date' | 'currency' | 'url';
-  context: string;
-  label: string;
-}
+// Shared analytics and mapping types (single source of truth)
+import type {
+  TemplateVariable,
+  TemplateAnalysis,
+  CsvAnalysis,
+  ColumnSuggestion,
+} from './types/mapping';
 
-export interface TemplateAnalysis {
-  variableCount: number;
-  variables: TemplateVariable[];
-  templateStructure: {
-    header?: string;
-    body?: string;
-    footer?: string;
-  };
-}
-
-export interface CsvAnalysis {
-  columns: string[];
-  samples: Record<string, string[]>;
-  suggestions: Record<number, string>;
-  confidence: Record<number, number>;
-  preview: string[];
-  validation: {
-    columnCount: number;
-    variableCount: number;
-    status: 'insufficient' | 'equal' | 'excess' | 'unknown';
-    phoneColumnDetected: Array<{column: string; confidence: number}>;
-    message: string;
-  };
-}
-
-export interface ColumnSuggestion {
-  column: string;
-  confidence: number;
-  reason: string;
-}
+export type { TemplateVariable, TemplateAnalysis, CsvAnalysis, ColumnSuggestion };
 
 export interface AnalyticsData {
   totalConversations: number;
@@ -241,7 +213,7 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
   if (limit) {
     url.searchParams.append('limit', limit.toString());
   }
-  
+
   const res = await fetchWithErrorHandling(url.toString());
   return res.json();
 }
@@ -259,7 +231,7 @@ export async function analyzeTemplate(templateName: string): Promise<{ templateN
     },
     body: JSON.stringify({ templateName }),
   });
-  
+
   return res.json();
 }
 
@@ -273,7 +245,7 @@ export async function analyzeCsv(file: File, templateName?: string): Promise<Csv
   if (templateName) {
     formData.append('templateName', templateName);
   }
-  
+
   const res = await fetchWithErrorHandling(`${API_BASE}/api/csv/analyze`, {
     method: 'POST',
     headers: {
@@ -281,7 +253,7 @@ export async function analyzeCsv(file: File, templateName?: string): Promise<Csv
     },
     body: formData,
   });
-  
+
   return res.json();
 }
 
@@ -296,7 +268,7 @@ export async function fetchAnalytics(params?: Record<string, string>): Promise<A
       url.searchParams.append(key, value);
     });
   }
-  
+
   const res = await fetchWithErrorHandling(url.toString());
   return res.json();
 }
@@ -311,7 +283,7 @@ export async function exportAnalytics(): Promise<void> {
       'X-ADMIN-TOKEN': config.adminToken,
     },
   });
-  
+
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -338,7 +310,7 @@ export async function fetchTemplatesAnalytics(params: { language?: string; orgId
   return res.json();
 }
 
-export async function fetchAnalyticsSummary(params: { start?: string; end?: string; language?: string; granularity?: 'auto'|'hour'|'day'; orgId?: string }) {
+export async function fetchAnalyticsSummary(params: { start?: string; end?: string; language?: string; granularity?: 'auto' | 'hour' | 'day'; orgId?: string }) {
   if (typeof window === 'undefined') {
     throw new Error('fetchAnalyticsSummary can only be called from the client side');
   }
@@ -352,7 +324,7 @@ export async function fetchAnalyticsSummary(params: { start?: string; end?: stri
   return res.json();
 }
 
-export async function fetchTemplateSeries(name: string, params: { start?: string; end?: string; language?: string; granularity?: 'auto'|'hour'|'day'; orgId?: string }) {
+export async function fetchTemplateSeries(name: string, params: { start?: string; end?: string; language?: string; granularity?: 'auto' | 'hour' | 'day'; orgId?: string }) {
   if (typeof window === 'undefined') {
     throw new Error('fetchTemplateSeries can only be called from the client side');
   }
@@ -366,7 +338,7 @@ export async function fetchTemplateSeries(name: string, params: { start?: string
   return res.json();
 }
 
-export async function fetchTemplateVariables(name: string, params: { start?: string; end?: string; language?: string; granularity?: 'auto'|'hour'|'day'; orgId?: string }) {
+export async function fetchTemplateVariables(name: string, params: { start?: string; end?: string; language?: string; granularity?: 'auto' | 'hour' | 'day'; orgId?: string }) {
   if (typeof window === 'undefined') {
     throw new Error('fetchTemplateVariables can only be called from the client side');
   }
@@ -380,7 +352,7 @@ export async function fetchTemplateVariables(name: string, params: { start?: str
   return res.json();
 }
 
-export async function fetchTopValues(name: string, variable: string, params: { start?: string; end?: string; language?: string; granularity?: 'auto'|'hour'|'day'; limit?: number; orgId?: string }) {
+export async function fetchTopValues(name: string, variable: string, params: { start?: string; end?: string; language?: string; granularity?: 'auto' | 'hour' | 'day'; limit?: number; orgId?: string }) {
   if (typeof window === 'undefined') {
     throw new Error('fetchTopValues can only be called from the client side');
   }
@@ -457,7 +429,7 @@ export async function sendTemplateDynamic(
       // Error already enhanced by fetchWithErrorHandling
       throw error;
     }
-    
+
     // Fallback error handling
     throw new Error(`Failed to send template: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
@@ -481,7 +453,7 @@ export async function fetchConversations(params: {
   }
 
   const url = new URL('/conversations', API_BASE);
-  
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined) {
       if (Array.isArray(value)) {
@@ -491,15 +463,15 @@ export async function fetchConversations(params: {
       }
     }
   });
-  
+
   const res = await fetchWithErrorHandling(url.toString(), {
     headers: {
       'X-ADMIN-TOKEN': config.adminToken,
     },
   });
-  
+
   const data: ConversationsResponse = await res.json();
-  
+
   // Defensive deduplication: remove duplicates by _id
   if (data.conversations && Array.isArray(data.conversations)) {
     const seen = new Set<string>();
@@ -512,16 +484,16 @@ export async function fetchConversations(params: {
       return true;
     });
   }
-  
+
   return data;
 }
 
 export async function fetchConversationMessages(
   phoneNumber: string,
-  params: { 
-    limit?: number; 
-    skip?: number; 
-    startDate?: string; 
+  params: {
+    limit?: number;
+    skip?: number;
+    startDate?: string;
     endDate?: string;
     direction?: 'inbound' | 'outbound';
   }
@@ -531,30 +503,30 @@ export async function fetchConversationMessages(
   }
 
   const url = new URL(`/conversations/${encodeURIComponent(phoneNumber)}/messages`, API_BASE);
-  
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined) {
       url.searchParams.append(key, value.toString());
     }
   });
-  
+
   const res = await fetchWithErrorHandling(url.toString(), {
     headers: {
       'X-ADMIN-TOKEN': config.adminToken,
     },
   });
-  
+
   return res.json();
 }
 
 export async function updateConversationMetadata(
   phoneNumber: string,
-  metadata: { 
-    clientName?: string; 
-    company?: string; 
-    tags?: string[]; 
-    notes?: string; 
-    flagged?: boolean 
+  metadata: {
+    clientName?: string;
+    company?: string;
+    tags?: string[];
+    notes?: string;
+    flagged?: boolean
   }
 ): Promise<Conversation> {
   if (typeof window === 'undefined') {
@@ -569,7 +541,7 @@ export async function updateConversationMetadata(
     },
     body: JSON.stringify(metadata),
   });
-  
+
   return res.json();
 }
 
@@ -593,6 +565,6 @@ export async function sendTextMessage(
       contextMessageId,
     }),
   });
-  
+
   return res.json();
 }
