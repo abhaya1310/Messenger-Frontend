@@ -23,6 +23,7 @@ export default function TemplatesPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Load templates from API
   useEffect(() => {
@@ -31,6 +32,7 @@ export default function TemplatesPage() {
 
   const loadTemplates = async () => {
     setLoading(true);
+    setError(null);
     try {
       // Try global cache first
       let templates = getTemplatesFromCache();
@@ -54,6 +56,18 @@ export default function TemplatesPage() {
       setTemplates(templates);
     } catch (error) {
       console.error('Failed to load templates:', error);
+      // Extract error message for display
+      let errorMessage = 'Unable to load templates. This might be due to missing WABA_ID configuration or API permissions.';
+      if (error instanceof Error) {
+        if (error.message.includes('WABA_ID')) {
+          errorMessage = error.message;
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('Network request failed')) {
+          errorMessage = 'Cannot connect to backend. Please verify NEXT_PUBLIC_BACKEND_URL is set correctly in your environment variables.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      setError(errorMessage);
       // Show empty state on error - no mock data
       setTemplates([]);
     } finally {
@@ -324,7 +338,7 @@ export default function TemplatesPage() {
               <p className="text-gray-600 mb-4">
                 {searchTerm || statusFilter !== "all" || categoryFilter !== "all"
                   ? "Try adjusting your filters to see more templates."
-                  : "Unable to load templates. This might be due to missing WABA_ID configuration or API permissions. Check the console for details."}
+                  : error || "Unable to load templates. This might be due to missing WABA_ID configuration or API permissions. Check the console for details."}
               </p>
               <div className="space-y-2">
                 <Button onClick={handleRefresh}>
@@ -332,7 +346,9 @@ export default function TemplatesPage() {
                   Refresh Templates
                 </Button>
                 <p className="text-xs text-gray-500">
-                  Make sure WABA_ID is set in your environment variables if you have a WhatsApp Business Account.
+                  {error?.includes('WABA_ID') 
+                    ? "Make sure WABA_ID is set in your backend environment variables if you have a WhatsApp Business Account."
+                    : "Check the browser console for detailed error information."}
                 </p>
               </div>
             </CardContent>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+// Use BACKEND_URL if set (server-side only), otherwise fallback to NEXT_PUBLIC_BACKEND_URL
+const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
 
 export async function POST(request: NextRequest) {
   try {
