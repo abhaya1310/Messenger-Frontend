@@ -223,10 +223,27 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
     const res = await fetchWithErrorHandling(url.toString());
     const data = await res.json();
     
+    // Log the response for debugging
+    console.log('[fetchTemplates] Response status:', res.status);
+    console.log('[fetchTemplates] Response data:', data);
+    
     // Check if the response contains an error
     if (data.error) {
       console.error('[fetchTemplates] Backend error:', data);
-      throw new Error(data.details || data.error || 'Failed to fetch templates');
+      const errorMsg = data.details || data.error || 'Failed to fetch templates';
+      // Include backend URL in error if available
+      if (data.backendUrl) {
+        console.error('[fetchTemplates] Backend URL used:', data.backendUrl);
+      }
+      throw new Error(errorMsg);
+    }
+    
+    // Check if data.data exists and is an array
+    if (!data.data || !Array.isArray(data.data)) {
+      console.warn('[fetchTemplates] Unexpected response format:', data);
+      if (data.data === null || data.data === undefined) {
+        throw new Error('Backend returned empty templates. This might indicate WABA_ID is not set in your backend environment variables.');
+      }
     }
     
     return data;
@@ -235,10 +252,13 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
     // Re-throw with more context
     if (error instanceof Error) {
       if (error.message.includes('WABA_ID')) {
-        throw new Error('WABA_ID is not configured on the backend. Please set WABA_ID in your backend environment variables.');
+        throw new Error('WABA_ID is not configured on the backend. Please set WABA_ID in your backend environment variables (not the frontend).');
       }
       if (error.message.includes('Failed to fetch') || error.message.includes('Network request failed')) {
-        throw new Error(`Cannot connect to backend at ${API_BASE}. Please verify NEXT_PUBLIC_BACKEND_URL is set correctly.`);
+        throw new Error(`Cannot connect to backend at ${API_BASE}. Please verify NEXT_PUBLIC_BACKEND_URL is set correctly and the backend is accessible.`);
+      }
+      if (error.message.includes('empty templates')) {
+        throw new Error('Backend returned no templates. This might indicate WABA_ID is not set in your backend environment variables.');
       }
     }
     throw error;

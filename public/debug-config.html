@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Debug</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status.ok { background: #10b981; color: white; }
+        .status.error { background: #ef4444; color: white; }
+        .status.warning { background: #f59e0b; color: white; }
+        code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #2563eb; }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .result.success { background: #d1fae5; }
+        .result.error { background: #fee2e2; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Configuration Debug Tool</h1>
+    
+    <div class="card">
+        <h2>Environment Variables</h2>
+        <div id="envVars"></div>
+    </div>
+    
+    <div class="card">
+        <h2>Backend Connection Test</h2>
+        <p>Click the button below to test if your backend is accessible:</p>
+        <button onclick="testBackend()">Test Backend Connection</button>
+        <div id="backendTest"></div>
+    </div>
+    
+    <div class="card">
+        <h2>Templates API Test</h2>
+        <p>Test the templates endpoint directly:</p>
+        <button onclick="testTemplates()">Test Templates Endpoint</button>
+        <div id="templatesTest"></div>
+    </div>
+
+    <script>
+        // Check environment variables
+        function checkEnvVars() {
+            const envDiv = document.getElementById('envVars');
+            const backendUrl = window.location.origin; // In browser, we can't access process.env directly
+            // But we can check what URL the page is trying to use
+            envDiv.innerHTML = `
+                <p><strong>Note:</strong> Environment variables are set at build time. Check your Vercel project settings.</p>
+                <p>To verify in browser console, look for:</p>
+                <ul>
+                    <li><code>[Config] API Base URL:</code> - Should show your backend URL</li>
+                    <li><code>[Config] NEXT_PUBLIC_BACKEND_URL:</code> - Should show your backend URL</li>
+                </ul>
+                <p><strong>Important:</strong> Make sure <code>WABA_ID</code> is set in your <strong>backend</strong> environment variables, not just the frontend.</p>
+            `;
+        }
+
+        async function testBackend() {
+            const resultDiv = document.getElementById('backendTest');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                // Try to get the backend URL from the current page's API calls
+                // We'll try common patterns
+                const possibleUrls = [
+                    window.location.origin.replace(/^https?:\/\/([^.]+)\./, 'https://backend.'),
+                    window.location.origin.replace(/^https?:\/\/([^.]+)\./, 'https://api.'),
+                    'https://csat-cloud.vercel.app',
+                ];
+                
+                let found = false;
+                for (const url of possibleUrls) {
+                    try {
+                        const response = await fetch(`${url}/api/health`, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            resultDiv.innerHTML = `
+                                <div class="result success">
+✅ Backend is accessible at: <strong>${url}</strong>
+Response: ${JSON.stringify(data, null, 2)}
+                                </div>
+                            `;
+                            found = true;
+                            break;
+                        }
+                    } catch (e) {
+                        // Continue to next URL
+                    }
+                }
+                
+                if (!found) {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+❌ Could not automatically detect backend URL.
+<br><br>
+<strong>To find your backend URL:</strong>
+<ol>
+    <li>Open browser console (F12)</li>
+    <li>Look for <code>[Config] API Base URL:</code> in the console</li>
+    <li>Or check your Vercel project settings for NEXT_PUBLIC_BACKEND_URL</li>
+</ol>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+❌ Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function testTemplates() {
+            const resultDiv = document.getElementById('templatesTest');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                // Use the same API endpoint the frontend uses
+                const response = await fetch('/api/templates?limit=5', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.data && Array.isArray(data.data)) {
+                    resultDiv.innerHTML = `
+                        <div class="result success">
+✅ Templates endpoint is working!
+<br>Found ${data.data.length} templates.
+<br><br>
+<strong>Response:</strong>
+${JSON.stringify(data, null, 2).substring(0, 500)}...
+                        </div>
+                    `;
+                } else if (data.error) {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+❌ Error from backend:
+<br><br>
+<strong>Error:</strong> ${data.error}
+<br><strong>Details:</strong> ${data.details || 'No details'}
+${data.backendUrl ? `<br><strong>Backend URL:</strong> ${data.backendUrl}` : ''}
+${data.hint ? `<br><br><strong>Hint:</strong> ${data.hint}` : ''}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+❌ Unexpected response format:
+${JSON.stringify(data, null, 2)}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+❌ Network error: ${error.message}
+<br><br>
+This usually means:
+<ul>
+    <li>Backend is not accessible</li>
+    <li>CORS is not configured</li>
+    <li>NEXT_PUBLIC_BACKEND_URL is incorrect</li>
+</ul>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize
+        checkEnvVars();
+    </script>
+</body>
+</html>
+
