@@ -201,16 +201,3 @@ export class ValidationService {
     };
   }
 }
-
-// Custom error classes
-export class MappingError extends Error {
-  constructor(
-    public type: 'missing_mapping' | 'invalid_column' | 'type_mismatch' | 'duplicate_mapping',
-    public variableIndex: number,
-    message: string,
-    public severity: 'error' | 'warning' = 'error'
-  ) {
-    super(message);
-    this.name = 'MappingError';
-  }
-}

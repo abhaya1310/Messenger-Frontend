@@ -16,11 +16,11 @@ interface ImageUploaderProps {
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 
-export function ImageUploader({ 
-  onUploadComplete, 
-  onRemove, 
+export function ImageUploader({
+  onUploadComplete,
+  onRemove,
   initialImageUrl,
-  maxSizeMB = 5 
+  maxSizeMB = 5
 }: ImageUploaderProps) {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl || null);
@@ -158,7 +158,7 @@ export function ImageUploader({
             </div>
           </div>
         )}
-        
+
         <input
           ref={fileInputRef}
           type="file"
