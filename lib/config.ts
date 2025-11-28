@@ -74,7 +74,16 @@ function getApiUrl(): string {
   return apiUrl;
 }
 
+const apiUrl = getApiUrl();
+
+// Log configuration in browser console for debugging (only in browser)
+if (typeof window !== 'undefined') {
+  console.log('[Config] API Base URL:', apiUrl);
+  console.log('[Config] NEXT_PUBLIC_BACKEND_URL:', process.env.NEXT_PUBLIC_BACKEND_URL || 'NOT SET');
+  console.log('[Config] Using default (localhost:3000):', apiUrl === 'http://localhost:3000' && !window.location.hostname.includes('localhost'));
+}
+
 export const config = {
-  apiUrl: getApiUrl(),
+  apiUrl,
   adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
 } as const;

@@ -345,11 +345,19 @@ export default function TemplatesPage() {
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh Templates
                 </Button>
-                <p className="text-xs text-gray-500">
-                  {error?.includes('WABA_ID') 
-                    ? "Make sure WABA_ID is set in your backend environment variables if you have a WhatsApp Business Account."
-                    : "Check the browser console for detailed error information."}
-                </p>
+                <div className="text-xs text-gray-500 space-y-1">
+                  {error?.includes('WABA_ID') ? (
+                    <p>Make sure WABA_ID is set in your <strong>backend</strong> environment variables if you have a WhatsApp Business Account.</p>
+                  ) : error?.includes('NEXT_PUBLIC_BACKEND_URL') || error?.includes('Cannot connect') ? (
+                    <div className="space-y-1">
+                      <p>⚠️ <strong>Configuration Issue:</strong> NEXT_PUBLIC_BACKEND_URL is not set or incorrect.</p>
+                      <p>In Vercel, set <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_BACKEND_URL</code> to your backend URL (e.g., https://your-backend.vercel.app)</p>
+                      <p className="text-gray-400 mt-2">Note: BACKEND_URL is different - you need NEXT_PUBLIC_BACKEND_URL for the frontend.</p>
+                    </div>
+                  ) : (
+                    <p>Check the browser console (F12) for detailed error information.</p>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

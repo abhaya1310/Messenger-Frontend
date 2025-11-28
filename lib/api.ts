@@ -214,8 +214,35 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
     url.searchParams.append('limit', limit.toString());
   }
 
-  const res = await fetchWithErrorHandling(url.toString());
-  return res.json();
+  // Log the URL being called for debugging
+  console.log('[fetchTemplates] Calling:', url.toString());
+  console.log('[fetchTemplates] API_BASE:', API_BASE);
+  console.log('[fetchTemplates] NEXT_PUBLIC_BACKEND_URL:', process.env.NEXT_PUBLIC_BACKEND_URL);
+
+  try {
+    const res = await fetchWithErrorHandling(url.toString());
+    const data = await res.json();
+    
+    // Check if the response contains an error
+    if (data.error) {
+      console.error('[fetchTemplates] Backend error:', data);
+      throw new Error(data.details || data.error || 'Failed to fetch templates');
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('[fetchTemplates] Error:', error);
+    // Re-throw with more context
+    if (error instanceof Error) {
+      if (error.message.includes('WABA_ID')) {
+        throw new Error('WABA_ID is not configured on the backend. Please set WABA_ID in your backend environment variables.');
+      }
+      if (error.message.includes('Failed to fetch') || error.message.includes('Network request failed')) {
+        throw new Error(`Cannot connect to backend at ${API_BASE}. Please verify NEXT_PUBLIC_BACKEND_URL is set correctly.`);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function analyzeTemplate(templateName: string): Promise<{ templateName: string; analysis: TemplateAnalysis }> {
