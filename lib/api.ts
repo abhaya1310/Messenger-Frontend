@@ -440,27 +440,45 @@ export async function sendTemplateDynamic(
   columnMapping: Record<number, string>,
   row: Record<string, string>,
   languageCode: string = 'en_US',
-  mediaId?: string
+  mediaId?: string,
+  campaignId?: string
 ): Promise<{ messageId: string; payload: any }> {
   if (typeof window === 'undefined') {
     throw new Error('sendTemplateDynamic can only be called from the client side');
   }
 
   try {
+    const payload: {
+      to: string;
+      templateName: string;
+      columnMapping: Record<number, string>;
+      row: Record<string, string>;
+      languageCode: string;
+      mediaId?: string;
+      campaignId?: string;
+    } = {
+      to,
+      templateName,
+      columnMapping,
+      row,
+      languageCode,
+    };
+
+    if (mediaId) {
+      payload.mediaId = mediaId;
+    }
+
+    if (campaignId) {
+      payload.campaignId = campaignId;
+    }
+
     const res = await fetchWithErrorHandling(`${API_BASE}/api/send-template-dynamic`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-ADMIN-TOKEN': config.adminToken,
       },
-      body: JSON.stringify({
-        to,
-        templateName,
-        columnMapping,
-        row,
-        languageCode,
-        mediaId
-      }),
+      body: JSON.stringify(payload),
     });
 
     return res.json();

@@ -389,11 +389,16 @@ export default function DynamicSendPage() {
           missingMappings.push(variable.index);
         }
       }
-      
+
       if (missingMappings.length > 0) {
         throw new Error(`Missing mappings for variables: ${missingMappings.join(', ')}. Please map all required template variables.`);
       }
-      
+
+      const campaignId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `campaign-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
       // Send in batches
       for (let i = 0; i < selectedData.length; i += batchSize) {
         const batch = selectedData.slice(i, i + batchSize);
@@ -413,7 +418,8 @@ export default function DynamicSendPage() {
               columnMapping,
               csvRow,
               'en_US',
-              mediaId || undefined // Pass mediaId if available
+              mediaId || undefined, // Pass mediaId if available
+              campaignId
             );
             
             const sendResult: SendResult = {
