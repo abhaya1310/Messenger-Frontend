@@ -72,21 +72,49 @@ export function ImageUploader({
       // Call backend API directly (not Next.js route), using shared config
       const API_BASE = config.apiUrl;
 
+      const headers: Record<string, string> = {
+        'X-ORG-ID': 'default',
+      };
+
+      if (config.adminToken && config.adminToken.trim() !== '') {
+        headers['X-ADMIN-TOKEN'] = config.adminToken;
+      }
+
       const response = await fetch(`${API_BASE}/api/media/upload`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'X-ADMIN-TOKEN': config.adminToken,
-        }
+        headers,
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: any = null;
 
-      if (!response.ok) {
-        throw new Error(data.error?.message || 'Upload failed');
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        // Non-JSON response, keep raw text for logging
       }
 
-      if (data.success && data.mediaId) {
+      if (!response.ok) {
+        console.error('[ImageUploader] Upload failed', {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText,
+        });
+
+        const backendMessage =
+          (data && (data.error?.message || data.error || data.message)) ||
+          responseText;
+
+        const message =
+          backendMessage && typeof backendMessage === 'string'
+            ? `Upload failed (${response.status}): ${backendMessage}`
+            : `Upload failed with status ${response.status} ${response.statusText}`;
+
+        throw new Error(message);
+      }
+
+      if (data && data.success && data.mediaId) {
         setUploadedMediaId(data.mediaId);
         onUploadComplete(data.mediaId);
       } else {
