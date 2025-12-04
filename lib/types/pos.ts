@@ -90,7 +90,7 @@ export interface CustomerListResponse {
   };
 }
 
-export interface CustomerDetail extends POSCustomer {
+export interface CustomerDetail extends Omit<POSCustomer, 'campaignHistory'> {
   transactions: POSTransaction[];
   campaignHistory: CampaignExecution[];
 }
