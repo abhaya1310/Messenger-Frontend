@@ -50,7 +50,7 @@ export interface Campaign {
 
 // API Request Types
 export interface CampaignListParams {
-  status?: 'draft' | 'scheduled' | 'active' | 'completed' | 'cancelled';
+  status?: 'draft' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled';
   type?: 'event' | 'promotional' | 'announcement';
   page?: number;
   limit?: number;
