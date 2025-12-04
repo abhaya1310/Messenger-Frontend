@@ -222,7 +222,7 @@ export default function AutoCampaignsPage() {
   // Available templates (not yet configured)
   const configuredTypes = new Set(autoCampaigns.map(c => c.triggerType));
   const availableTemplates = Object.entries(triggerTypeInfo).filter(
-    ([type]) => !configuredTypes.has(type)
+    ([type]) => !configuredTypes.has(type as AutoCampaign["triggerType"])
   );
 
   return (
