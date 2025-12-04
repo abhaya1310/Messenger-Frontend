@@ -87,3 +87,6 @@ export const config = {
   apiUrl,
   adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
 } as const;
+
+// Re-export auth helpers for convenience
+export { getCurrentOrgId, getAuthToken } from './auth';

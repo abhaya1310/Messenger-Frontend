@@ -22,9 +22,8 @@ function MainContent({ children }: { children: React.ReactNode }) {
 
   return (
     <main
-      className={`flex-1 transition-all duration-300 ${
-        isMobile ? "ml-0" : isCollapsed ? "md:ml-16" : "md:ml-64"
-      }`}
+      className={`flex-1 transition-all duration-300 ${isMobile ? "ml-0" : isCollapsed ? "md:ml-16" : "md:ml-64"
+        }`}
     >
       <div className="min-h-screen w-full">{children}</div>
     </main>
@@ -36,8 +35,8 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Login page has its own layout, no sidebar or auth gate.
-  if (pathname === "/login") {
+  // Login & public pages have their own layout, no sidebar or auth gate.
+  if (pathname === "/login" || pathname === "/privacy-policy") {
     return <div className="min-h-screen w-full">{children}</div>;
   }
 

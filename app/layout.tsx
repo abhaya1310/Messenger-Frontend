@@ -15,8 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WhatsApp Template Manager",
-  description: "Manage WhatsApp templates, campaigns, and analytics",
+  title: "ConnectNow Command Center",
+  description:
+    "ConnectNow helps you orchestrate WhatsApp templates, campaigns, analytics, and live customer insights in one place.",
 };
 
 export default function RootLayout({

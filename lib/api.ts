@@ -627,3 +627,341 @@ export async function sendTextMessage(
 
   return res.json();
 }
+
+// ============================================================================
+// POS & Campaign API Functions
+// ============================================================================
+
+import { getCurrentOrgId, getAuthToken } from './auth';
+import type {
+  POSCustomer,
+  CustomerListParams,
+  CustomerListResponse,
+  CustomerDetail,
+  TransactionListResponse,
+  SyncStatus,
+} from './types/pos';
+import type {
+  Campaign,
+  CampaignListParams,
+  CampaignListResponse,
+  CreateCampaignRequest,
+  AudiencePreviewResponse,
+  AutoCampaign,
+  CreateAutoCampaignRequest,
+  CampaignAnalytics,
+  CustomerAnalytics,
+} from './types/campaign';
+import type {
+  OrgSettings,
+  ServiceUpdate,
+} from './types/org-settings';
+
+/**
+ * Generic API client with automatic org and auth headers
+ */
+export async function apiClient<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  if (typeof window === 'undefined') {
+    throw new Error('apiClient can only be called from the client side');
+  }
+
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (orgId) {
+    headers['X-ORG-ID'] = orgId;
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Also include admin token for backwards compatibility
+  if (config.adminToken) {
+    headers['X-ADMIN-TOKEN'] = config.adminToken;
+  }
+
+  const res = await fetchWithErrorHandling(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  return res.json();
+}
+
+// ============================================================================
+// POS Customer API Functions
+// ============================================================================
+
+/**
+ * Fetch list of POS customers with pagination and filters
+ */
+export async function fetchCustomers(params: CustomerListParams = {}): Promise<CustomerListResponse> {
+  const searchParams = new URLSearchParams();
+  
+  if (params.page) searchParams.set('page', params.page.toString());
+  if (params.limit) searchParams.set('limit', params.limit.toString());
+  if (params.search) searchParams.set('search', params.search);
+  if (params.sortBy) searchParams.set('sortBy', params.sortBy);
+  if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+  if (params.filters?.hasEmail !== undefined) searchParams.set('hasEmail', params.filters.hasEmail.toString());
+  if (params.filters?.hasBirthday !== undefined) searchParams.set('hasBirthday', params.filters.hasBirthday.toString());
+  if (params.filters?.minVisits) searchParams.set('minVisits', params.filters.minVisits.toString());
+  if (params.filters?.daysSinceLastVisit) searchParams.set('daysSinceLastVisit', params.filters.daysSinceLastVisit.toString());
+
+  const queryString = searchParams.toString();
+  return apiClient<CustomerListResponse>(`/api/pos/customers${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * Fetch single customer detail with transactions and campaign history
+ */
+export async function fetchCustomerDetail(customerId: string): Promise<CustomerDetail> {
+  return apiClient<CustomerDetail>(`/api/pos/customers/${customerId}`);
+}
+
+/**
+ * Fetch customer transactions
+ */
+export async function fetchCustomerTransactions(
+  customerId: string,
+  params: { page?: number; limit?: number } = {}
+): Promise<TransactionListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', params.page.toString());
+  if (params.limit) searchParams.set('limit', params.limit.toString());
+  
+  const queryString = searchParams.toString();
+  return apiClient<TransactionListResponse>(
+    `/api/pos/customers/${customerId}/transactions${queryString ? `?${queryString}` : ''}`
+  );
+}
+
+/**
+ * Fetch POS sync status
+ */
+export async function fetchSyncStatus(): Promise<SyncStatus> {
+  return apiClient<SyncStatus>('/api/pos/sync/status');
+}
+
+// ============================================================================
+// Campaign API Functions
+// ============================================================================
+
+/**
+ * Fetch list of campaigns
+ */
+export async function fetchCampaigns(params: CampaignListParams = {}): Promise<CampaignListResponse> {
+  const searchParams = new URLSearchParams();
+  
+  if (params.status) searchParams.set('status', params.status);
+  if (params.type) searchParams.set('type', params.type);
+  if (params.page) searchParams.set('page', params.page.toString());
+  if (params.limit) searchParams.set('limit', params.limit.toString());
+
+  const queryString = searchParams.toString();
+  return apiClient<CampaignListResponse>(`/api/campaigns${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * Fetch single campaign by ID
+ */
+export async function fetchCampaign(campaignId: string): Promise<Campaign> {
+  return apiClient<Campaign>(`/api/campaigns/${campaignId}`);
+}
+
+/**
+ * Create a new campaign
+ */
+export async function createCampaign(data: CreateCampaignRequest): Promise<Campaign> {
+  return apiClient<Campaign>('/api/campaigns', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Update a campaign
+ */
+export async function updateCampaign(campaignId: string, data: Partial<CreateCampaignRequest>): Promise<Campaign> {
+  return apiClient<Campaign>(`/api/campaigns/${campaignId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Delete a campaign (draft only)
+ */
+export async function deleteCampaign(campaignId: string): Promise<void> {
+  await apiClient<void>(`/api/campaigns/${campaignId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Preview audience for campaign filters
+ */
+export async function previewAudience(filters: {
+  minVisits?: number;
+  maxDaysSinceLastVisit?: number;
+  minTotalSpend?: number;
+  outlets?: string[];
+}): Promise<AudiencePreviewResponse> {
+  return apiClient<AudiencePreviewResponse>('/api/campaigns/preview-audience', {
+    method: 'POST',
+    body: JSON.stringify({ filters }),
+  });
+}
+
+/**
+ * Schedule a campaign
+ */
+export async function scheduleCampaign(campaignId: string): Promise<Campaign> {
+  return apiClient<Campaign>(`/api/campaigns/${campaignId}/schedule`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Pause a campaign
+ */
+export async function pauseCampaign(campaignId: string): Promise<Campaign> {
+  return apiClient<Campaign>(`/api/campaigns/${campaignId}/pause`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Resume a paused campaign
+ */
+export async function resumeCampaign(campaignId: string): Promise<Campaign> {
+  return apiClient<Campaign>(`/api/campaigns/${campaignId}/resume`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Cancel a campaign
+ */
+export async function cancelCampaign(campaignId: string): Promise<Campaign> {
+  return apiClient<Campaign>(`/api/campaigns/${campaignId}/cancel`, {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// Auto Campaign API Functions
+// ============================================================================
+
+/**
+ * Fetch list of auto campaigns
+ */
+export async function fetchAutoCampaigns(): Promise<{ autoCampaigns: AutoCampaign[] }> {
+  return apiClient<{ autoCampaigns: AutoCampaign[] }>('/api/auto-campaigns');
+}
+
+/**
+ * Fetch single auto campaign
+ */
+export async function fetchAutoCampaign(id: string): Promise<AutoCampaign> {
+  return apiClient<AutoCampaign>(`/api/auto-campaigns/${id}`);
+}
+
+/**
+ * Create an auto campaign
+ */
+export async function createAutoCampaign(data: CreateAutoCampaignRequest): Promise<AutoCampaign> {
+  return apiClient<AutoCampaign>('/api/auto-campaigns', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Update an auto campaign
+ */
+export async function updateAutoCampaign(id: string, data: Partial<CreateAutoCampaignRequest>): Promise<AutoCampaign> {
+  return apiClient<AutoCampaign>(`/api/auto-campaigns/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Delete an auto campaign
+ */
+export async function deleteAutoCampaign(id: string): Promise<void> {
+  await apiClient<void>(`/api/auto-campaigns/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Activate an auto campaign
+ */
+export async function activateAutoCampaign(id: string): Promise<AutoCampaign> {
+  return apiClient<AutoCampaign>(`/api/auto-campaigns/${id}/activate`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Pause an auto campaign
+ */
+export async function pauseAutoCampaign(id: string): Promise<AutoCampaign> {
+  return apiClient<AutoCampaign>(`/api/auto-campaigns/${id}/pause`, {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// Organization Settings API Functions
+// ============================================================================
+
+/**
+ * Fetch organization settings
+ */
+export async function fetchOrgSettings(orgId?: string): Promise<OrgSettings> {
+  const id = orgId || getCurrentOrgId();
+  if (!id) {
+    throw new Error('Organization ID is required');
+  }
+  return apiClient<OrgSettings>(`/api/org-settings/${id}`);
+}
+
+/**
+ * Update service configuration
+ */
+export async function updateServiceConfig(orgId: string, update: ServiceUpdate): Promise<OrgSettings> {
+  return apiClient<OrgSettings>(`/api/org-settings/${orgId}/services`, {
+    method: 'PATCH',
+    body: JSON.stringify(update),
+  });
+}
+
+// ============================================================================
+// Campaign & Customer Analytics API Functions
+// ============================================================================
+
+/**
+ * Fetch campaign analytics
+ */
+export async function fetchCampaignAnalytics(): Promise<CampaignAnalytics> {
+  return apiClient<CampaignAnalytics>('/api/analytics/campaigns');
+}
+
+/**
+ * Fetch customer analytics
+ */
+export async function fetchCustomerAnalytics(): Promise<CustomerAnalytics> {
+  return apiClient<CustomerAnalytics>('/api/analytics/customers');
+}

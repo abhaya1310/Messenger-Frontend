@@ -4,41 +4,105 @@ import {
   createContext,
   useContext,
   useState,
+  useEffect,
   type ReactNode,
 } from "react";
 import {
-  validateCredentials,
+  login as apiLogin,
+  getStoredAuth,
+  clearAuth,
   type LoginCredentials,
+  type AuthState,
+  // Legacy support
+  validateCredentials,
 } from "@/lib/auth";
+import type { User } from "@/lib/types/org-settings";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
-  login: (credentials: LoginCredentials) => boolean;
+  isLoading: boolean;
+  user: User | null;
+  orgId: string | null;
+  orgName: string | null;
+  login: (credentials: LoginCredentials) => Promise<boolean>;
+  loginLegacy: (credentials: { id: string; password: string }) => boolean;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authState, setAuthState] = useState<AuthState>({
+    isAuthenticated: false,
+    user: null,
+    orgId: null,
+    orgName: null,
+    token: null,
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = (credentials: LoginCredentials) => {
+  // Load stored auth on mount
+  useEffect(() => {
+    const stored = getStoredAuth();
+    setAuthState(stored);
+    setIsLoading(false);
+  }, []);
+
+  // New API-based login
+  const login = async (credentials: LoginCredentials): Promise<boolean> => {
+    try {
+      const response = await apiLogin(credentials);
+      setAuthState({
+        isAuthenticated: true,
+        user: response.user,
+        orgId: response.orgId,
+        orgName: response.orgName,
+        token: response.token,
+      });
+      return true;
+    } catch (error) {
+      console.error('Login failed:', error);
+      return false;
+    }
+  };
+
+  // Legacy login for backwards compatibility
+  const loginLegacy = (credentials: { id: string; password: string }): boolean => {
     const isValid = validateCredentials(credentials);
     if (isValid) {
-      setIsAuthenticated(true);
+      // Set a basic authenticated state without org info
+      setAuthState({
+        isAuthenticated: true,
+        user: null,
+        orgId: process.env.NEXT_PUBLIC_DEFAULT_ORG_ID || null,
+        orgName: 'Default Organization',
+        token: null,
+      });
     }
     return isValid;
   };
 
   const logout = () => {
-    setIsAuthenticated(false);
+    clearAuth();
+    setAuthState({
+      isAuthenticated: false,
+      user: null,
+      orgId: null,
+      orgName: null,
+      token: null,
+    });
   };
 
   return (
     <AuthContext.Provider
       value={{
-        isAuthenticated,
+        isAuthenticated: authState.isAuthenticated,
+        isLoading,
+        user: authState.user,
+        orgId: authState.orgId,
+        orgName: authState.orgName,
         login,
+        loginLegacy,
         logout,
       }}
     >
@@ -54,5 +118,3 @@ export function useAuth(): AuthContextValue {
   }
   return ctx;
 }
-
-

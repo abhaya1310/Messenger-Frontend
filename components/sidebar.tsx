@@ -14,6 +14,10 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  LayoutDashboard,
+  Workflow,
+  MessageCircleQuestion,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "./sidebar-provider";
@@ -27,6 +31,11 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   {
+    title: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
     title: "Templates",
     href: "/templates",
     icon: MessageSquare,
@@ -35,6 +44,16 @@ const navItems: NavItem[] = [
     title: "Campaigns",
     href: "/campaigns",
     icon: Megaphone,
+  },
+  {
+    title: "Auto Campaigns",
+    href: "/auto-campaigns",
+    icon: Workflow,
+  },
+  {
+    title: "Feedback",
+    href: "/feedback",
+    icon: MessageCircleQuestion,
   },
   {
     title: "Loyalty Programs",
@@ -50,6 +69,11 @@ const navItems: NavItem[] = [
     title: "Monitor",
     href: "/monitor",
     icon: Users,
+  },
+  {
+    title: "Settings",
+    href: "/settings",
+    icon: Settings,
   },
 ];
 
@@ -130,7 +154,7 @@ export function Sidebar() {
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
-                WhatsApp Manager
+                ConnectNow
               </h2>
               <Button
                 variant="ghost"
@@ -156,7 +180,7 @@ export function Sidebar() {
                         className={cn(
                           "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                           isActive
-                            ? "bg-blue-50 text-blue-700"
+                            ? "bg-[var(--connectnow-accent-soft)] text-[var(--connectnow-accent-strong)]"
                             : "text-gray-700 hover:bg-gray-100"
                         )}
                       >
@@ -203,7 +227,7 @@ export function Sidebar() {
         >
           {!isCollapsed && (
             <h2 className="text-lg font-semibold text-gray-900">
-              WhatsApp Manager
+              ConnectNow
             </h2>
           )}
           <Button
@@ -234,7 +258,7 @@ export function Sidebar() {
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-blue-50 text-blue-700"
+                        ? "bg-[var(--connectnow-accent-soft)] text-[var(--connectnow-accent-strong)]"
                         : "text-gray-700 hover:bg-gray-100",
                       isCollapsed && "justify-center"
                     )}

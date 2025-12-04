@@ -22,10 +22,15 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-12 text-center">
             <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Welcome to WhatsApp Manager
+              Welcome to{" "}
+              <span className="text-[var(--connectnow-accent-strong)]">
+                ConnectNow
+              </span>
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Manage your WhatsApp templates, campaigns, analytics, and customer conversations all in one place.
+              ConnectNow unifies your restaurant’s campaigns, loyalty,
+              analytics, and WhatsApp conversations with live dashboards ready
+              for your team.
             </p>
           </div>
         </div>

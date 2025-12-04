@@ -2,6 +2,7 @@
 
 import { FormEvent, useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,46 +13,73 @@ import csatLogo from "@/csat logo.jpeg";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { isAuthenticated, login } = useAuth();
-  const [id, setId] = useState("");
+  const { isAuthenticated, isLoading, login, loginLegacy } = useAuth();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace("/");
+    if (!isLoading && isAuthenticated) {
+      router.replace("/dashboard");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isLoading, router]);
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setInfo(null);
     setIsSubmitting(true);
 
-    const ok = login({ id, password });
-    setIsSubmitting(false);
+    try {
+      // Try new API-based login first
+      const ok = await login({ email, password });
 
-    if (!ok) {
-      setError("Invalid ID or password.");
-      if (typeof window !== "undefined") {
-        window.alert("Incorrect ID or password. Please try again.");
+      if (!ok) {
+        // Fallback to legacy login for backwards compatibility
+        // This supports the old ID/password format
+        const legacyOk = loginLegacy({ id: email, password });
+
+        if (!legacyOk) {
+          setError("Invalid email or password.");
+          setIsSubmitting(false);
+          return;
+        }
       }
-      return;
-    }
 
-    if (typeof window !== "undefined") {
-      window.alert("Login successful!");
-    }
+      router.replace("/dashboard");
+    } catch (err) {
+      console.error('Login error:', err);
 
-    router.replace("/");
+      // Try legacy login as fallback
+      const legacyOk = loginLegacy({ id: email, password });
+      if (legacyOk) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      setError("Login failed. Please check your credentials.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSignUpClick = () => {
-    setInfo("Sign up is not available yet. Please use the admin credentials to log in.");
+    setInfo("Sign up is not available yet. Please contact your administrator for access.");
   };
+
+  // Show loading while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-sky-100 to-sky-200">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-sky-100 to-sky-200 px-4">
@@ -68,22 +96,24 @@ export default function LoginPage() {
             />
           </div>
           <CardTitle className="text-center text-2xl font-semibold">
-            WhatsApp Manager Login
+            ConnectNow Login
           </CardTitle>
           <p className="text-sm text-muted-foreground text-center">
-            Sign in with your admin credentials to access templates, campaigns, and more.
+            Sign in to access templates, campaigns, and more.
           </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="id">ID</Label>
+              <Label htmlFor="email">Email / ID</Label>
               <Input
-                id="id"
+                id="email"
+                type="text"
                 autoComplete="username"
-                value={id}
-                onChange={(event) => setId(event.target.value)}
-                placeholder="Enter your ID"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Enter your email or ID"
+                required
               />
             </div>
             <div className="space-y-2">
@@ -95,6 +125,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Enter your password"
+                required
               />
             </div>
 
@@ -122,6 +153,11 @@ export default function LoginPage() {
               >
                 Sign up
               </Button>
+              <p className="text-xs text-center text-muted-foreground pt-2">
+                <Link href="/privacy-policy" className="underline">
+                  Privacy Policy
+                </Link>
+              </p>
             </div>
           </form>
         </CardContent>
@@ -129,5 +165,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
-

@@ -1,10 +1,206 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Breadcrumb } from "@/components/breadcrumb";
-import { Megaphone, Clock } from "lucide-react";
+import {
+  Megaphone,
+  Plus,
+  Search,
+  Filter,
+  Play,
+  Pause,
+  XCircle,
+  Loader2,
+  Users,
+  Calendar,
+  Send,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+} from "lucide-react";
+import {
+  fetchCampaigns,
+  fetchTemplates,
+  createCampaign,
+  scheduleCampaign,
+  pauseCampaign,
+  resumeCampaign,
+  cancelCampaign,
+  deleteCampaign,
+  previewAudience,
+  type Template,
+} from "@/lib/api";
+import type {
+  Campaign,
+  CreateCampaignRequest,
+  AudiencePreviewResponse,
+} from "@/lib/types/campaign";
+import { handleApiError } from "@/lib/error-handler";
 
 export default function CampaignsPage() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Create campaign dialog
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [audiencePreview, setAudiencePreview] = useState<AudiencePreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  
+  // Form state
+  const [formData, setFormData] = useState<CreateCampaignRequest>({
+    name: "",
+    description: "",
+    type: "event",
+    scheduledAt: "",
+    template: { name: "", language: "en" },
+    audience: { type: "all" },
+  });
+
+  // Selected campaign for detail view
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadData();
+  }, [statusFilter, typeFilter]);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [campaignsData, templatesData] = await Promise.all([
+        fetchCampaigns({
+          status: statusFilter !== "all" ? statusFilter as Campaign["status"] : undefined,
+          type: typeFilter !== "all" ? typeFilter as Campaign["type"] : undefined,
+        }),
+        fetchTemplates(),
+      ]);
+      
+      setCampaigns(campaignsData.campaigns);
+      setTemplates(templatesData.data.filter(t => t.status === "APPROVED"));
+    } catch (error) {
+      console.error("Failed to load campaigns:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateCampaign() {
+    if (!formData.name || !formData.template.name || !formData.scheduledAt) {
+      alert("Please fill in all required fields");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await createCampaign(formData);
+      setShowCreateDialog(false);
+      resetForm();
+      loadData();
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleCampaignAction(campaignId: string, action: "schedule" | "pause" | "resume" | "cancel" | "delete") {
+    setActionLoading(campaignId);
+    try {
+      switch (action) {
+        case "schedule":
+          await scheduleCampaign(campaignId);
+          break;
+        case "pause":
+          await pauseCampaign(campaignId);
+          break;
+        case "resume":
+          await resumeCampaign(campaignId);
+          break;
+        case "cancel":
+          await cancelCampaign(campaignId);
+          break;
+        case "delete":
+          await deleteCampaign(campaignId);
+          break;
+      }
+      loadData();
+      setSelectedCampaign(null);
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handlePreviewAudience() {
+    if (formData.audience.type !== "segment") return;
+    
+    setPreviewLoading(true);
+    try {
+      const preview = await previewAudience(formData.audience.filters || {});
+      setAudiencePreview(preview);
+    } catch (error) {
+      console.error("Failed to preview audience:", error);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function resetForm() {
+    setFormData({
+      name: "",
+      description: "",
+      type: "event",
+      scheduledAt: "",
+      template: { name: "", language: "en" },
+      audience: { type: "all" },
+    });
+    setAudiencePreview(null);
+  }
+
+  function getStatusBadge(status: Campaign["status"]) {
+    const variants: Record<Campaign["status"], { variant: "default" | "secondary" | "outline"; className: string }> = {
+      draft: { variant: "secondary", className: "bg-gray-100 text-gray-700" },
+      scheduled: { variant: "outline", className: "border-blue-500 text-blue-600" },
+      active: { variant: "default", className: "bg-green-100 text-green-700" },
+      paused: { variant: "outline", className: "border-yellow-500 text-yellow-600" },
+      completed: { variant: "secondary", className: "bg-blue-100 text-blue-700" },
+      cancelled: { variant: "secondary", className: "bg-red-100 text-red-700" },
+    };
+    return variants[status] || variants.draft;
+  }
+
+  function getStatusIcon(status: Campaign["status"]) {
+    switch (status) {
+      case "draft": return <Clock className="h-4 w-4" />;
+      case "scheduled": return <Calendar className="h-4 w-4" />;
+      case "active": return <Play className="h-4 w-4" />;
+      case "paused": return <Pause className="h-4 w-4" />;
+      case "completed": return <CheckCircle className="h-4 w-4" />;
+      case "cancelled": return <XCircle className="h-4 w-4" />;
+      default: return <AlertCircle className="h-4 w-4" />;
+    }
+  }
+
+  const filteredCampaigns = campaigns.filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -13,8 +209,12 @@ export default function CampaignsPage() {
           <div className="flex justify-between items-center py-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Campaigns</h1>
-              <p className="text-gray-600 mt-1">Manage and track your marketing campaigns</p>
+              <p className="text-gray-600 mt-1">Create and manage marketing campaigns</p>
             </div>
+            <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create Campaign
+            </Button>
           </div>
         </div>
       </header>
@@ -23,39 +223,590 @@ export default function CampaignsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Breadcrumb items={[{ label: "Campaigns" }]} />
 
-        {/* Coming Soon Card */}
-        <Card className="max-w-2xl mx-auto mt-12">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Megaphone className="h-6 w-6 text-blue-600" />
+        {/* Filters */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search campaigns..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
               </div>
-              <div>
-                <CardTitle className="text-2xl">Campaigns</CardTitle>
-                <CardDescription>Coming soon</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-gray-600">
-                The Campaigns feature is currently under development. This page will allow you to:
-              </p>
-              <ul className="list-disc list-inside space-y-2 text-gray-600 ml-4">
-                <li>Create and manage marketing campaigns</li>
-                <li>Schedule bulk message sends</li>
-                <li>Track campaign performance</li>
-                <li>Analyze engagement metrics</li>
-              </ul>
-              <div className="flex items-center gap-2 text-sm text-gray-500 pt-4 border-t">
-                <Clock className="h-4 w-4" />
-                <span>This feature will be available in a future update.</span>
-              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="paused">Paused</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="event">Event</SelectItem>
+                  <SelectItem value="promotional">Promotional</SelectItem>
+                  <SelectItem value="announcement">Announcement</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
+
+        {/* Campaigns List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          </div>
+        ) : filteredCampaigns.length === 0 ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center">
+                <Megaphone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No campaigns found</h3>
+                <p className="text-gray-500 mb-4">
+                  {searchQuery || statusFilter !== "all" || typeFilter !== "all"
+                    ? "Try adjusting your filters"
+                    : "Get started by creating your first campaign"}
+                </p>
+                <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Create Campaign
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Scheduled</TableHead>
+                  <TableHead>Metrics</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCampaigns.map((campaign) => (
+                  <TableRow
+                    key={campaign._id}
+                    className="cursor-pointer"
+                    onClick={() => setSelectedCampaign(campaign)}
+                  >
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{campaign.name}</p>
+                        <p className="text-sm text-gray-500 truncate max-w-[200px]">
+                          {campaign.description || "No description"}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize">
+                        {campaign.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={getStatusBadge(campaign.status).className}>
+                        <span className="flex items-center gap-1">
+                          {getStatusIcon(campaign.status)}
+                          <span className="capitalize">{campaign.status}</span>
+                        </span>
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {campaign.scheduledAt
+                        ? new Date(campaign.scheduledAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <span className="text-gray-500">Sent:</span>{" "}
+                        <span className="font-medium">{campaign.metrics.sentCount}</span>
+                        <span className="mx-2 text-gray-300">|</span>
+                        <span className="text-gray-500">Read:</span>{" "}
+                        <span className="font-medium">{campaign.metrics.readCount}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                        {campaign.status === "draft" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleCampaignAction(campaign._id, "schedule")}
+                            disabled={actionLoading === campaign._id}
+                          >
+                            {actionLoading === campaign._id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                        {campaign.status === "active" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleCampaignAction(campaign._id, "pause")}
+                            disabled={actionLoading === campaign._id}
+                          >
+                            <Pause className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {campaign.status === "paused" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleCampaignAction(campaign._id, "resume")}
+                            disabled={actionLoading === campaign._id}
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {["draft", "scheduled"].includes(campaign.status) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => handleCampaignAction(campaign._id, "cancel")}
+                            disabled={actionLoading === campaign._id}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
       </main>
+
+      {/* Create Campaign Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New Campaign</DialogTitle>
+            <DialogDescription>
+              Set up a new marketing campaign to reach your customers
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs defaultValue="details" className="mt-4">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="audience">Audience</TabsTrigger>
+              <TabsTrigger value="template">Template</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="details" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Campaign Name *</Label>
+                <Input
+                  id="name"
+                  placeholder="e.g., Diwali 2024 Offer"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Input
+                  id="description"
+                  placeholder="Brief description of this campaign"
+                  value={formData.description || ""}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="type">Campaign Type *</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(value) => setFormData({ ...formData, type: value as CreateCampaignRequest["type"] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="event">Event (Diwali, New Year, etc.)</SelectItem>
+                    <SelectItem value="promotional">Promotional</SelectItem>
+                    <SelectItem value="announcement">Announcement</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <DateTimePicker
+                label="Schedule For *"
+                value={formData.scheduledAt}
+                onChange={(value) => setFormData({ ...formData, scheduledAt: value })}
+                minDate={new Date().toISOString().split("T")[0]}
+                required
+              />
+            </TabsContent>
+
+            <TabsContent value="audience" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Target Audience</Label>
+                <Select
+                  value={formData.audience.type}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      audience: { type: value as "all" | "segment" | "custom" },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Customers</SelectItem>
+                    <SelectItem value="segment">Customer Segment</SelectItem>
+                    <SelectItem value="custom">Custom List</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {formData.audience.type === "segment" && (
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium">Segment Filters</h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Minimum Visits</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 2"
+                        value={formData.audience.filters?.minVisits || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            audience: {
+                              ...formData.audience,
+                              filters: {
+                                ...formData.audience.filters,
+                                minVisits: e.target.value ? parseInt(e.target.value) : undefined,
+                              },
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Max Days Since Last Visit</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 90"
+                        value={formData.audience.filters?.maxDaysSinceLastVisit || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            audience: {
+                              ...formData.audience,
+                              filters: {
+                                ...formData.audience.filters,
+                                maxDaysSinceLastVisit: e.target.value ? parseInt(e.target.value) : undefined,
+                              },
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Minimum Total Spend (₹)</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 5000"
+                        value={formData.audience.filters?.minTotalSpend || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            audience: {
+                              ...formData.audience,
+                              filters: {
+                                ...formData.audience.filters,
+                                minTotalSpend: e.target.value ? parseInt(e.target.value) : undefined,
+                              },
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handlePreviewAudience}
+                    disabled={previewLoading}
+                    className="w-full"
+                  >
+                    {previewLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Users className="h-4 w-4 mr-2" />
+                    )}
+                    Preview Audience
+                  </Button>
+
+                  {audiencePreview && (
+                    <div className="p-4 bg-blue-50 rounded-lg">
+                      <p className="font-medium text-blue-900">
+                        Estimated Reach: {audiencePreview.estimatedCount.toLocaleString()} customers
+                      </p>
+                      {audiencePreview.sampleCustomers.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-sm text-blue-700">Sample customers:</p>
+                          <ul className="mt-1 text-sm text-blue-600">
+                            {audiencePreview.sampleCustomers.slice(0, 3).map((c, i) => (
+                              <li key={i}>{c.name} - {c.phone}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {formData.audience.type === "custom" && (
+                <div className="space-y-2">
+                  <Label>Phone Numbers (one per line)</Label>
+                  <textarea
+                    className="w-full min-h-[120px] p-3 border rounded-md text-sm"
+                    placeholder="91XXXXXXXXXX&#10;91XXXXXXXXXX"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        audience: {
+                          ...formData.audience,
+                          customPhoneNumbers: e.target.value.split("\n").filter(Boolean),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="template" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>WhatsApp Template *</Label>
+                <Select
+                  value={formData.template.name}
+                  onValueChange={(name) =>
+                    setFormData({
+                      ...formData,
+                      template: { ...formData.template, name },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (
+                      <SelectItem key={t.name} value={t.name}>
+                        {t.name} ({t.language})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Language</Label>
+                <Select
+                  value={formData.template.language}
+                  onValueChange={(language) =>
+                    setFormData({
+                      ...formData,
+                      template: { ...formData.template, language },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="en_US">English (US)</SelectItem>
+                    <SelectItem value="hi">Hindi</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {formData.template.name && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium mb-2">Template Preview</h4>
+                  <div className="text-sm text-gray-600">
+                    {templates.find((t) => t.name === formData.template.name)?.components
+                      .filter((c) => c.type === "BODY")
+                      .map((c) => c.text)
+                      .join("\n") || "No preview available"}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateCampaign} disabled={creating}>
+              {creating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Creating...
+                </>
+              ) : (
+                "Create Campaign"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Campaign Detail Dialog */}
+      <Dialog open={!!selectedCampaign} onOpenChange={() => setSelectedCampaign(null)}>
+        <DialogContent className="max-w-lg">
+          {selectedCampaign && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{selectedCampaign.name}</DialogTitle>
+                <DialogDescription>
+                  {selectedCampaign.description || "No description provided"}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Status</span>
+                  <Badge className={getStatusBadge(selectedCampaign.status).className}>
+                    {selectedCampaign.status}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Type</span>
+                  <span className="capitalize">{selectedCampaign.type}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Template</span>
+                  <span>{selectedCampaign.template.name}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Scheduled</span>
+                  <span>
+                    {selectedCampaign.scheduledAt
+                      ? new Date(selectedCampaign.scheduledAt).toLocaleString()
+                      : "Not scheduled"}
+                  </span>
+                </div>
+
+                <div className="border-t pt-4">
+                  <h4 className="font-medium mb-3">Metrics</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{selectedCampaign.metrics.sentCount}</p>
+                      <p className="text-sm text-gray-500">Sent</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{selectedCampaign.metrics.deliveredCount}</p>
+                      <p className="text-sm text-gray-500">Delivered</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{selectedCampaign.metrics.readCount}</p>
+                      <p className="text-sm text-gray-500">Read</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                {selectedCampaign.status === "draft" && (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="text-red-600"
+                      onClick={() => handleCampaignAction(selectedCampaign._id, "delete")}
+                      disabled={!!actionLoading}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      onClick={() => handleCampaignAction(selectedCampaign._id, "schedule")}
+                      disabled={!!actionLoading}
+                    >
+                      {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Schedule
+                    </Button>
+                  </>
+                )}
+                {selectedCampaign.status === "active" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleCampaignAction(selectedCampaign._id, "pause")}
+                    disabled={!!actionLoading}
+                  >
+                    Pause Campaign
+                  </Button>
+                )}
+                {selectedCampaign.status === "paused" && (
+                  <Button
+                    onClick={() => handleCampaignAction(selectedCampaign._id, "resume")}
+                    disabled={!!actionLoading}
+                  >
+                    Resume Campaign
+                  </Button>
+                )}
+                {["scheduled", "active"].includes(selectedCampaign.status) && (
+                  <Button
+                    variant="outline"
+                    className="text-red-600"
+                    onClick={() => handleCampaignAction(selectedCampaign._id, "cancel")}
+                    disabled={!!actionLoading}
+                  >
+                    Cancel Campaign
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
