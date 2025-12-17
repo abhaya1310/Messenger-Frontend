@@ -27,13 +27,19 @@ export function AdminHeader() {
 
     return (
         <div className="w-full border-b bg-background">
-            <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+            <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-4">
                     <Link href="/admin/orgs/new" className="font-semibold">
                         Admin Console
                     </Link>
                     <Link href="/admin/orgs/new" className={linkClass("/admin/orgs/new")}>
                         Add Client
+                    </Link>
+                    <Link href="/admin/templates" className={linkClass("/admin/templates")}>
+                        Templates
+                    </Link>
+                    <Link href="/admin/campaigns" className={linkClass("/admin/campaigns")}>
+                        Campaigns
                     </Link>
                 </div>
                 <Button variant="outline" onClick={onLogout}>

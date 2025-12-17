@@ -31,6 +31,10 @@ This is a **Next.js 15** application built with:
   - Uses `Authorization: Bearer <accessToken>` on authenticated calls.
   - Validates stored sessions via `GET /api/auth/me` on app boot.
   - User onboarding via access code at `/onboarding`.
+- **Admin Portal (role-based)**
+  - Admin routes under `/admin/*` are guarded client-side via `GET /api/auth/me` and require `user.role === "admin"`.
+  - Admin org context is persisted as `selectedOrgId` in localStorage.
+  - Admin UI calls `/api/admin/*` Next.js route handlers, passing `Authorization: Bearer <accessToken>` and (for org-scoped calls) `X-ORG-ID: <orgId>`.
 - **Dashboard**
   - KPI overview and customer segments (`/dashboard`).
 - **Templates + Bulk Send**
@@ -50,6 +54,11 @@ This is a **Next.js 15** application built with:
 ## Pages & Routes
 
 - **`/login`**: Auth entrypoint.
+- **`/admin/login`**: Admin login page (uses standard JWT login, then requires `role=admin`).
+- **`/admin/orgs/new`**: Create a new org (admin-only).
+- **`/admin/orgs/[orgId]`**: Org details + WhatsApp configuration (admin-only).
+- **`/admin/templates`**: Admin templates browser (UI mirrors `/templates`).
+- **`/admin/campaigns`**: Admin campaigns UI (UI mirrors `/campaigns`).
 - **`/onboarding`**: Access-code based account setup.
 - **`/privacy-policy`**: Public policy page.
 - **`/dashboard`**: Primary authenticated landing.
@@ -121,7 +130,7 @@ Open the app at:
 
 The frontend primarily makes **direct API calls** to the backend using the `NEXT_PUBLIC_BACKEND_URL` environment variable (see `lib/config.ts` and `lib/api.ts`).
 
-This repo also contains **optional/legacy Next.js route handlers** under `app/api/*` that proxy requests server-side using `BACKEND_URL` / `ADMIN_TOKEN` (and `NEXT_PUBLIC_API_URL` for feedback routes). These are kept for backwards compatibility and specific flows that call `/api/*` from the UI.
+This repo also contains **Next.js route handlers** under `app/api/*` that proxy requests server-side using `BACKEND_URL` (and `NEXT_PUBLIC_API_URL` for feedback routes). These route handlers forward `Authorization` when present and some calls also forward `X-ORG-ID` for tenant scoping.
 
 ```
 Frontend (Next.js)          Backend (Express)
@@ -367,7 +376,6 @@ Next.js automatically reloads when you make changes to:
 |----------|-------------|---------|
 | `NEXT_PUBLIC_DEFAULT_ORG_ID` | Default organization ID | `default` |
 | `BACKEND_URL` | Backend URL for Next.js API proxy routes under `app/api/*` (server only) | `http://localhost:3000` |
-| `ADMIN_TOKEN` | Admin token used by server-side proxy routes (server only) | (empty) |
 | `NEXT_PUBLIC_API_URL` | Legacy proxy base used by `app/api/feedback/*` routes | `http://localhost:3002` |
 | `ADMIN_SESSION_SECRET` | Secret used to sign the admin portal session cookie (server only) | (empty) |
 | `ADMIN_PORTAL_USERNAME` | Optional admin portal username allowlist (server only) | (empty) |
@@ -501,7 +509,7 @@ fetch('http://localhost:3000/api/templates')
 1. Log in again (token may be expired)
 2. Verify the app is sending `Authorization: Bearer <JWT>` on authenticated requests
 3. Check backend logs for authentication failures
-4. For admin portal routes (`/admin/*`), ensure `ADMIN_SESSION_SECRET` is configured
+4. For admin routes (`/admin/*`), ensure the logged-in user has `role=admin` and that admin calls include `Authorization`
 
 ### Build Errors
 
@@ -530,8 +538,7 @@ High-level steps:
    - `NEXT_PUBLIC_BACKEND_URL` → your production backend URL (for example, `https://csat-cloud.vercel.app`).
    - `NEXT_PUBLIC_DEFAULT_ORG_ID` → optional.
    - `BACKEND_URL` → same backend URL, used by `app/api/*` proxy routes.
-   - `ADMIN_TOKEN` → server-side admin token matching the backend.
-   - `ADMIN_SESSION_SECRET` → required if you use the admin portal (`/admin/*`).
+   - `ADMIN_SESSION_SECRET` → optional; only needed if you rely on admin cookie-based proxy auth instead of passing `Authorization` to `/api/admin/*`.
 6. Ensure your backend CORS configuration allows your Vercel domain(s) as origins.
 
 **Quick Production Build (self-hosted Node)**:

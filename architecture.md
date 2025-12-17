@@ -123,17 +123,27 @@ Tenant scoping:
 - `X-ORG-ID` is treated as legacy/fallback and is only sent when there is no JWT.
 - **Temporary backend constraint**: for admin proxy calls under `/api/admin/**`, the frontend currently always forwards `X-ORG-ID` (even when the admin JWT is present), because many admin endpoints still select tenant via the header.
 
-### Admin Portal Auth (server-side session cookie)
+### Admin Portal Auth (role-based)
 
-The admin portal uses a server-only session cookie to avoid exposing admin JWTs in browser JS.
+Admin access is enforced based on the authenticated user's role.
 
-- Admin UI: `/admin/*`
-- Admin login proxy: `app/api/admin/auth/login/route.ts`
-  - Calls backend `POST /api/auth/login`
-  - Stores the returned admin JWT in an httpOnly cookie (`connectnow_admin_session`)
-- Admin proxy routes under `app/api/admin/*` read that cookie, validate it, and forward requests to the backend with:
-  - `Authorization: Bearer <admin JWT>`
-  - `X-ORG-ID: <orgId>`
+- Admin UI routes: `/admin/*`
+- Route guard: `app/admin/layout.tsx` wraps all admin pages in `components/admin/admin-route-guard.tsx`
+  - Reads the stored token (`connectnow_token`) and calls `GET /api/auth/me`
+  - Requires `user.role === "admin"` to render admin pages
+  - Redirects unauthenticated/expired sessions to `/login?reason=session_expired&next=...`
+
+Admin API calls are routed through Next.js route handlers under `app/api/admin/*`.
+
+- The admin UI sends:
+  - `Authorization: Bearer <token>`
+  - `X-ORG-ID: <orgId>` for org-scoped endpoints
+- The proxy routes forward `Authorization` and `X-ORG-ID` to the backend.
+- Proxy auth helper: `lib/admin-proxy-auth.ts` prefers the incoming `Authorization` header and only falls back to the legacy admin session cookie if present.
+
+Org selection:
+
+- Selected org is persisted as `selectedOrgId` in localStorage via `lib/selected-org.ts`.
 
 
 ### User Onboarding (Access Code)
@@ -190,9 +200,12 @@ Admin proxy routes:
 
 - `app/api/admin/orgs/route.ts`
 - `app/api/admin/org/[orgId]/route.ts`
+- `app/api/admin/org/[orgId]/user/route.ts`
 - `app/api/admin/org/[orgId]/whatsapp/update-phone-number-id/route.ts`
 - `app/api/admin/org/[orgId]/whatsapp/configure-shared/route.ts`
 - `app/api/admin/org/[orgId]/whatsapp/configure-dedicated/route.ts`
+- `app/api/admin/org/[orgId]/whatsapp/status/route.ts`
+- `app/api/admin/whatsapp/orgs/route.ts`
 
 The repo includes `app/api/README.md` marking these as deprecated.
 
@@ -284,9 +297,8 @@ Client-exposed:
 Server-only (used by Next.js route handlers under `app/api/*`):
 
 - `BACKEND_URL`
-- `ADMIN_TOKEN`
 
-Server-only (used by admin portal session):
+Server-only (legacy; only used if you rely on admin session cookies instead of passing `Authorization`):
 
 - `ADMIN_SESSION_SECRET`
 - `ADMIN_PORTAL_USERNAME` (optional)
