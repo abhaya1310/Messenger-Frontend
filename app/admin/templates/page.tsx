@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,42 +14,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { MessagePreview } from "@/components/message-preview";
 import { AdminHeader } from "@/components/admin/admin-header";
 
-const MOCK_TEMPLATES: Template[] = [
-  {
-    name: "welcome_offer_v1",
-    language: "en",
-    status: "APPROVED",
-    category: "MARKETING",
-    created_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString(),
-    modified_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    components: [
-      { type: "BODY", text: "Hi {{1}}, welcome to {{2}}. Here is your {{3}}% off coupon: {{4}}" },
-    ],
-  },
-  {
-    name: "otp_login_v2",
-    language: "en",
-    status: "APPROVED",
-    category: "AUTHENTICATION",
-    created_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 60).toISOString(),
-    modified_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
-    components: [
-      { type: "BODY", text: "Your verification code is {{1}}. This code expires in {{2}} minutes." },
-    ],
-  },
-  {
-    name: "invoice_ready_v1",
-    language: "en",
-    status: "PENDING",
-    category: "UTILITY",
-    created_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
-    modified_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
-    components: [
-      { type: "BODY", text: "Hi {{1}}, your invoice is ready. Amount: ₹{{2}}. Tap to view details." },
-    ],
-  },
-];
-
 export default function AdminTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,9 +25,9 @@ export default function AdminTemplatesPage() {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      setTemplates(MOCK_TEMPLATES);
+      setTemplates([]);
       setLoading(false);
-    }, 400);
+    }, 250);
     return () => clearTimeout(t);
   }, []);
 
@@ -123,7 +86,7 @@ export default function AdminTemplatesPage() {
   const handleRefresh = async () => {
     setLoading(true);
     setTimeout(() => {
-      setTemplates(MOCK_TEMPLATES);
+      setTemplates([]);
       setLoading(false);
     }, 300);
   };
@@ -294,11 +257,14 @@ export default function AdminTemplatesPage() {
                   </div>
 
                   <div className="flex gap-2 pt-4 mt-auto">
-                    <Button asChild size="sm" className="flex-1">
-                      <Link href={`/templates/${template.name}/send`} className="flex items-center justify-center">
-                        <MessageSquare className="h-4 w-4 mr-2 flex-shrink-0" />
-                        Send
-                      </Link>
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      disabled
+                      title="Backend integration required"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2 flex-shrink-0" />
+                      Send
                     </Button>
                     <Button
                       variant="outline"
@@ -319,8 +285,10 @@ export default function AdminTemplatesPage() {
           <Card>
             <CardContent className="text-center py-12">
               <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No templates found</h3>
-              <p className="text-gray-600 mb-4">Try adjusting your filters to see more templates.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No templates yet</h3>
+              <p className="text-gray-600 mb-4">
+                Templates will appear here once backend integration is enabled.
+              </p>
               <Button onClick={handleRefresh}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh Templates

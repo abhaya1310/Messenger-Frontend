@@ -17,7 +17,6 @@ import {
     Plus,
     Search,
     Loader2,
-    Users,
     Calendar,
     Send,
     CheckCircle,
@@ -28,74 +27,8 @@ import {
     XCircle,
 } from "lucide-react";
 import type { Template } from "@/lib/api";
-import type { AudiencePreviewResponse, Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
+import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 import { AdminHeader } from "@/components/admin/admin-header";
-
-const MOCK_TEMPLATES: Template[] = [
-    {
-        name: "welcome_offer_v1",
-        language: "en",
-        status: "APPROVED",
-        category: "MARKETING",
-        created_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString(),
-        modified_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-        components: [{ type: "BODY", text: "Hi {{1}}, welcome to {{2}}. Here is your {{3}}% off coupon: {{4}}" }],
-    },
-    {
-        name: "invoice_ready_v1",
-        language: "en",
-        status: "APPROVED",
-        category: "UTILITY",
-        created_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
-        modified_time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
-        components: [{ type: "BODY", text: "Hi {{1}}, your invoice is ready. Amount: ₹{{2}}. Tap to view details." }],
-    },
-];
-
-const MOCK_CAMPAIGNS: Campaign[] = [
-    {
-        _id: "cmp_001",
-        orgId: "demo-org",
-        name: "Diwali 2025 Offer",
-        description: "Festive offer campaign for high intent customers",
-        type: "event",
-        status: "scheduled",
-        scheduledAt: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
-        template: { name: "welcome_offer_v1", language: "en" },
-        audience: { type: "segment", filters: { minVisits: 2, maxDaysSinceLastVisit: 60 } },
-        metrics: {
-            targetCount: 1200,
-            sentCount: 0,
-            deliveredCount: 0,
-            readCount: 0,
-            failedCount: 0,
-            respondedCount: 0,
-        },
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-        updatedAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-    },
-    {
-        _id: "cmp_002",
-        orgId: "demo-org",
-        name: "Weekend Promo",
-        description: "Limited time weekend promo",
-        type: "promotional",
-        status: "draft",
-        scheduledAt: new Date(Date.now() + 1000 * 60 * 60 * 36).toISOString(),
-        template: { name: "invoice_ready_v1", language: "en" },
-        audience: { type: "all" },
-        metrics: {
-            targetCount: 0,
-            sentCount: 0,
-            deliveredCount: 0,
-            readCount: 0,
-            failedCount: 0,
-            respondedCount: 0,
-        },
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 10).toISOString(),
-        updatedAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    },
-];
 
 function newId(prefix: string) {
     return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
@@ -111,8 +44,6 @@ export default function AdminCampaignsPage() {
 
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [creating, setCreating] = useState(false);
-    const [audiencePreview, setAudiencePreview] = useState<AudiencePreviewResponse | null>(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
 
     const [formData, setFormData] = useState<CreateCampaignRequest>({
         name: "",
@@ -129,10 +60,10 @@ export default function AdminCampaignsPage() {
     useEffect(() => {
         setLoading(true);
         const t = setTimeout(() => {
-            setTemplates(MOCK_TEMPLATES);
-            setCampaigns(MOCK_CAMPAIGNS);
+            setTemplates([]);
+            setCampaigns([]);
             setLoading(false);
-        }, 450);
+        }, 250);
         return () => clearTimeout(t);
     }, []);
 
@@ -145,7 +76,6 @@ export default function AdminCampaignsPage() {
             template: { name: "", language: "en" },
             audience: { type: "all" },
         });
-        setAudiencePreview(null);
     }
 
     function getStatusBadge(status: Campaign["status"]) {
@@ -207,10 +137,9 @@ export default function AdminCampaignsPage() {
                     type: formData.audience.type,
                     filters: formData.audience.filters,
                     customPhoneNumbers: formData.audience.customPhoneNumbers,
-                    estimatedCount: audiencePreview?.estimatedCount,
                 },
                 metrics: {
-                    targetCount: audiencePreview?.estimatedCount || 0,
+                    targetCount: 0,
                     sentCount: 0,
                     deliveredCount: 0,
                     readCount: 0,
@@ -259,24 +188,6 @@ export default function AdminCampaignsPage() {
             setSelectedCampaign(null);
             setActionLoading(null);
         }, 450);
-    }
-
-    async function handlePreviewAudience() {
-        if (formData.audience.type !== "segment") return;
-
-        setPreviewLoading(true);
-        setTimeout(() => {
-            const estimate = Math.max(50, Math.floor(Math.random() * 2500));
-            setAudiencePreview({
-                estimatedCount: estimate,
-                sampleCustomers: [
-                    { name: "Rohit", phone: "+91 98765 00001" },
-                    { name: "Aditi", phone: "+91 98765 00002" },
-                    { name: "Sana", phone: "+91 98765 00003" },
-                ],
-            });
-            setPreviewLoading(false);
-        }, 500);
     }
 
     return (
@@ -353,11 +264,11 @@ export default function AdminCampaignsPage() {
                         <CardContent className="py-12">
                             <div className="text-center">
                                 <Megaphone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">No campaigns found</h3>
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">No campaigns yet</h3>
                                 <p className="text-gray-500 mb-4">
                                     {searchQuery || statusFilter !== "all" || typeFilter !== "all"
                                         ? "Try adjusting your filters"
-                                        : "Get started by creating your first campaign"}
+                                        : "Create campaigns that will be available for users to run."}
                                 </p>
                                 <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
                                     <Plus className="h-4 w-4" />
@@ -634,40 +545,9 @@ export default function AdminCampaignsPage() {
                                         </div>
                                     </div>
 
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={handlePreviewAudience}
-                                        disabled={previewLoading}
-                                        className="w-full"
-                                    >
-                                        {previewLoading ? (
-                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                        ) : (
-                                            <Users className="h-4 w-4 mr-2" />
-                                        )}
-                                        Preview Audience
-                                    </Button>
-
-                                    {audiencePreview && (
-                                        <div className="p-4 bg-blue-50 rounded-lg">
-                                            <p className="font-medium text-blue-900">
-                                                Estimated Reach: {audiencePreview.estimatedCount.toLocaleString()} customers
-                                            </p>
-                                            {audiencePreview.sampleCustomers.length > 0 && (
-                                                <div className="mt-2">
-                                                    <p className="text-sm text-blue-700">Sample customers:</p>
-                                                    <ul className="mt-1 text-sm text-blue-600">
-                                                        {audiencePreview.sampleCustomers.slice(0, 3).map((c, i) => (
-                                                            <li key={i}>
-                                                                {c.name} - {c.phone}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                    <div className="text-sm text-muted-foreground">
+                                        Audience preview will be available after backend integration.
+                                    </div>
                                 </div>
                             )}
 
@@ -694,28 +574,41 @@ export default function AdminCampaignsPage() {
                         <TabsContent value="template" className="space-y-4 mt-4">
                             <div className="space-y-2">
                                 <Label>WhatsApp Template *</Label>
-                                <Select
-                                    value={formData.template.name}
-                                    onValueChange={(name) =>
-                                        setFormData({
-                                            ...formData,
-                                            template: { ...formData.template, name },
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a template" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {templates
-                                            .filter((t) => t.status === "APPROVED")
-                                            .map((t) => (
-                                                <SelectItem key={t.name} value={t.name}>
-                                                    {t.name} ({t.language})
-                                                </SelectItem>
-                                            ))}
-                                    </SelectContent>
-                                </Select>
+                                {templates.length > 0 ? (
+                                    <Select
+                                        value={formData.template.name}
+                                        onValueChange={(name) =>
+                                            setFormData({
+                                                ...formData,
+                                                template: { ...formData.template, name },
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a template" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {templates
+                                                .filter((t) => t.status === "APPROVED")
+                                                .map((t) => (
+                                                    <SelectItem key={t.name} value={t.name}>
+                                                        {t.name} ({t.language})
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <Input
+                                        placeholder="Enter template name (backend integration pending)"
+                                        value={formData.template.name}
+                                        onChange={(e) =>
+                                            setFormData({
+                                                ...formData,
+                                                template: { ...formData.template, name: e.target.value },
+                                            })
+                                        }
+                                    />
+                                )}
                             </div>
 
                             <div className="space-y-2">
