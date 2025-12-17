@@ -1,17 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import CampaignRunsClient from "./runs-client";
+import { Breadcrumb } from "@/components/breadcrumb";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
-import { Breadcrumb } from "@/components/breadcrumb";
 import {
   Megaphone,
   Plus,
@@ -47,20 +48,20 @@ import type {
 } from "@/lib/types/campaign";
 import { handleApiError } from "@/lib/error-handler";
 
-export default function CampaignsPage() {
+function LegacyCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // Create campaign dialog
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [creating, setCreating] = useState(false);
   const [audiencePreview, setAudiencePreview] = useState<AudiencePreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  
+
   // Form state
   const [formData, setFormData] = useState<CreateCampaignRequest>({
     name: "",
@@ -89,7 +90,7 @@ export default function CampaignsPage() {
         }),
         fetchTemplates(),
       ]);
-      
+
       setCampaigns(campaignsData.campaigns);
       setTemplates(templatesData.data.filter(t => t.status === "APPROVED"));
     } catch (error) {
@@ -149,7 +150,7 @@ export default function CampaignsPage() {
 
   async function handlePreviewAudience() {
     if (formData.audience.type !== "segment") return;
-    
+
     setPreviewLoading(true);
     try {
       const preview = await previewAudience(formData.audience.filters || {});
@@ -197,7 +198,7 @@ export default function CampaignsPage() {
     }
   }
 
-  const filteredCampaigns = campaigns.filter(c => 
+  const filteredCampaigns = campaigns.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -334,11 +335,11 @@ export default function CampaignsPage() {
                     <TableCell>
                       {campaign.scheduledAt
                         ? new Date(campaign.scheduledAt).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                         : "—"}
                     </TableCell>
                     <TableCell>
@@ -497,7 +498,7 @@ export default function CampaignsPage() {
               {formData.audience.type === "segment" && (
                 <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                   <h4 className="font-medium">Segment Filters</h4>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Minimum Visits</Label>
@@ -519,7 +520,7 @@ export default function CampaignsPage() {
                         }
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label>Max Days Since Last Visit</Label>
                       <Input
@@ -540,7 +541,7 @@ export default function CampaignsPage() {
                         }
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label>Minimum Total Spend (₹)</Label>
                       <Input
@@ -809,4 +810,8 @@ export default function CampaignsPage() {
       </Dialog>
     </div>
   );
+}
+
+export default function CampaignsPage() {
+  return <CampaignRunsClient />;
 }
