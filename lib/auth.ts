@@ -14,8 +14,20 @@ export interface AuthState {
 }
 
 export interface LoginCredentials {
-  email: string;
+  identifier: string;
   password: string;
+}
+
+export interface RegisterVerifyResponse {
+  ok: boolean;
+  orgName?: string;
+  expiresAt?: string;
+  error?: 'invalid_or_expired' | 'invalid_body' | string;
+}
+
+export interface RegisterCompleteResponse {
+  success: boolean;
+  error?: 'invalid_or_expired' | 'username_taken' | 'invalid_body' | string;
 }
 
 /**
@@ -23,17 +35,33 @@ export interface LoginCredentials {
  * Returns user info, orgId, and token on success
  */
 export async function login(credentials: LoginCredentials): Promise<LoginResponse> {
-  const response = await fetch(`${config.apiUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(credentials),
-  });
+  const identifier = credentials.identifier.trim();
+  const isEmail = identifier.includes('@');
+
+  const attempt = async (body: Record<string, unknown>) => {
+    return fetch(`${config.apiUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  };
+
+  const primaryBody = isEmail
+    ? ({ email: identifier, password: credentials.password } satisfies LoginRequest)
+    : ({ username: identifier, password: credentials.password } satisfies LoginRequest);
+
+  let response = await attempt(primaryBody);
+
+  if (!response.ok && response.status === 401 && !isEmail) {
+    const fallbackBody = ({ email: identifier, password: credentials.password } satisfies LoginRequest);
+    response = await attempt(fallbackBody);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Login failed' }));
-    throw new Error(error.message || 'Invalid credentials');
+    throw new Error(error.message || error.error || 'Invalid credentials');
   }
 
   const data: LoginResponse = await response.json();
@@ -48,15 +76,84 @@ export async function login(credentials: LoginCredentials): Promise<LoginRespons
  * Stores authentication data in localStorage
  */
 export function storeAuthData(data: LoginResponse) {
+  const token = data.accessToken || data.token;
+  const orgId = data.user?.orgId || data.orgId || null;
+  const orgName = data.orgName || null;
+
+  if (!token) {
+    throw new Error('Login response did not include an access token');
+  }
+
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
     user: data.user,
     isAuthenticated: true,
   }));
-  localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
-  localStorage.setItem(ORG_STORAGE_KEY, JSON.stringify({
-    orgId: data.orgId,
-    orgName: data.orgName,
-  }));
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+
+  if (orgId) {
+    localStorage.setItem(ORG_STORAGE_KEY, JSON.stringify({
+      orgId,
+      orgName,
+    }));
+  } else {
+    localStorage.removeItem(ORG_STORAGE_KEY);
+  }
+}
+
+export async function verifyRegistrationAccessCode(accessCode: string): Promise<RegisterVerifyResponse> {
+  const response = await fetch(`${config.apiUrl}/api/auth/register/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ accessCode }),
+  });
+
+  if (response.status === 400) {
+    return response.json().catch(() => ({ ok: false, error: 'invalid_body' }));
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to verify access code');
+  }
+
+  return response.json();
+}
+
+export async function validateSessionWithMeEndpoint(token: string): Promise<boolean> {
+  const response = await fetch(`${config.apiUrl}/api/auth/me`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  return true;
+}
+
+export async function completeRegistrationAccessCode(payload: { accessCode: string; password: string; username?: string }): Promise<RegisterCompleteResponse> {
+  const response = await fetch(`${config.apiUrl}/api/auth/register/complete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (response.status === 400 || response.status === 409) {
+    return response.json().catch(() => ({ success: false, error: 'invalid_body' }));
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to complete registration');
+  }
+
+  return response.json();
 }
 
 /**
@@ -131,7 +228,7 @@ export function getAuthToken(): string | null {
  */
 export function getCurrentOrgId(): string | null {
   if (typeof window === 'undefined') return null;
-  
+
   try {
     const orgData = localStorage.getItem(ORG_STORAGE_KEY);
     if (orgData) {

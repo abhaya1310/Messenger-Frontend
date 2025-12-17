@@ -36,7 +36,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Login & public pages have their own layout, no sidebar or auth gate.
-  if (pathname === "/login" || pathname === "/privacy-policy") {
+  if (pathname === "/login" || pathname === "/onboarding" || pathname === "/privacy-policy" || pathname.startsWith("/admin")) {
     return <div className="min-h-screen w-full">{children}</div>;
   }
 

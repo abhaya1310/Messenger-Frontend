@@ -1,10 +1,12 @@
-# WhatsApp Template Management System - Frontend
+# ConnectNow Command Center (Frontend)
 
-Next.js frontend application for the WhatsApp Template Management System. This frontend communicates directly with the backend API and can be deployed independently.
+Next.js 15 (App Router) frontend for ConnectNow: a WhatsApp + POS driven customer engagement command center. This frontend communicates with the backend API and can be deployed independently.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
+- [Key Features](#key-features)
+- [Pages & Routes](#pages--routes)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [API Connections](#api-connections)
@@ -17,32 +19,62 @@ Next.js frontend application for the WhatsApp Template Management System. This f
 ## Overview
 
 This is a **Next.js 15** application built with:
-- **React 19** - UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **shadcn/ui** - UI components
-- **Direct API Calls** - Communicates directly with backend (no proxy)
+- **React 19**
+- **TypeScript**
+- **Tailwind CSS v4**
+- **shadcn/ui** (Radix UI)
 
-### Key Features
+## Key Features
 
-- 📱 **Template Management** - Browse and analyze WhatsApp templates
-- 📊 **Analytics Dashboard** - View conversation and message statistics
-- 💬 **Monitor Conversations** - WhatsApp Web-style conversation interface
-- 📤 **CSV Upload & Mapping** - Intelligent column mapping for bulk messaging
-- 🎨 **Modern UI** - Responsive design with shadcn/ui components
+- **Authentication**
+  - Login page (`/login`) backed by `POST /api/auth/login`.
+  - Uses `Authorization: Bearer <accessToken>` on authenticated calls.
+  - Validates stored sessions via `GET /api/auth/me` on app boot.
+  - User onboarding via access code at `/onboarding`.
+- **Dashboard**
+  - KPI overview and customer segments (`/dashboard`).
+- **Templates + Bulk Send**
+  - Browse templates (`/templates`).
+  - CSV upload + intelligent mapping + preview + batched sending (`/templates/[templateName]/send`).
+- **Campaigns**
+  - Create and schedule campaigns (`/campaigns`).
+- **Auto Campaign Settings**
+  - Configure birthday/anniversary/first-visit/winback/festivals + utility messaging (`/auto-campaigns`).
+- **Analytics**
+  - Messaging + customer analytics and export (`/analytics`).
+- **Monitor**
+  - Conversation inbox, message thread, replies, and metadata (`/monitor`).
+- **Settings**
+  - Organization services toggles and POS integration settings (`/settings`).
+
+## Pages & Routes
+
+- **`/login`**: Auth entrypoint.
+- **`/onboarding`**: Access-code based account setup.
+- **`/privacy-policy`**: Public policy page.
+- **`/dashboard`**: Primary authenticated landing.
+- **`/templates`**: Template listing.
+- **`/templates/[templateName]/send`**: CSV-driven bulk send flow.
+- **`/campaigns`**: Campaign scheduler.
+- **`/auto-campaigns`**: Automated campaigns + utility messaging configuration.
+- **`/analytics`**: Reporting and exports.
+- **`/monitor`**: Conversations inbox.
+- **`/settings`**: Org settings and service toggles.
 
 ## Prerequisites
 
-- **Node.js** >= 18.18
+- **Node.js**
+  - Minimum: `>= 18.18`
+  - Recommended: use the version in `.nvmrc` (`20.15.1`).
 - **npm** >= 9
-- **Backend Server** - Must be running and accessible (see [Backend README](../README.md))
+- **Backend server** running and reachable (default expected: `http://localhost:3000`).
 
 ## Quick Start
 
 ### 1. Navigate to Frontend Directory
 
 ```bash
-cd D:\Whatsapp-Frontend
+cd Messenger-Frontend
 ```
 
 ### 2. Install Dependencies
@@ -54,17 +86,17 @@ npm install
 ### 3. Configure Environment Variables
 
 ```bash
-# Copy environment template
-copy env.example .env.local
+# Create local env file from template
+# macOS / Linux:
+cp env.example .env.local
 
-# Edit .env.local with your backend URL
-notepad .env.local
+# Windows PowerShell:
+# copy env.example .env.local
 ```
 
 **Required Configuration**:
 ```bash
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3000
-NEXT_PUBLIC_ADMIN_TOKEN=your_admin_token_here
 ```
 
 ### 4. Start Development Server
@@ -73,13 +105,23 @@ NEXT_PUBLIC_ADMIN_TOKEN=your_admin_token_here
 npm run dev
 ```
 
-The frontend will be available at [http://localhost:3001](http://localhost:3001)
+By default, Next.js starts on port `3000`. If your backend is already on `3000`, run the frontend on a different port:
+
+```bash
+npm run dev -- -p 3001
+```
+
+Open the app at:
+- `http://localhost:3000` (default)
+- `http://localhost:3001` (if you pass `-p 3001`)
 
 ## API Connections
 
 ### Connection Architecture
 
-The frontend makes **direct API calls** to the backend using the `NEXT_PUBLIC_BACKEND_URL` environment variable. There is no proxy layer - all requests go directly to the backend.
+The frontend primarily makes **direct API calls** to the backend using the `NEXT_PUBLIC_BACKEND_URL` environment variable (see `lib/config.ts` and `lib/api.ts`).
+
+This repo also contains **optional/legacy Next.js route handlers** under `app/api/*` that proxy requests server-side using `BACKEND_URL` / `ADMIN_TOKEN` (and `NEXT_PUBLIC_API_URL` for feedback routes). These are kept for backwards compatibility and specific flows that call `/api/*` from the UI.
 
 ```
 Frontend (Next.js)          Backend (Express)
@@ -101,7 +143,6 @@ The API base URL is configured via `lib/config.ts` and used in `lib/api.ts`:
 // lib/config.ts
 export const config = {
   apiUrl: getApiUrl(), // uses NEXT_PUBLIC_BACKEND_URL
-  adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
 } as const;
 
 // lib/api.ts
@@ -121,11 +162,11 @@ const API_BASE = config.apiUrl;
 #### 1. Check Environment Variable
 
 ```bash
-# In PowerShell
-$env:NEXT_PUBLIC_BACKEND_URL
+# macOS / Linux
+cat .env.local
 
-# Or check .env.local file
-type .env.local
+# Windows PowerShell
+# type .env.local
 ```
 
 #### 2. Test Backend Connectivity
@@ -224,9 +265,6 @@ fetch('http://localhost:3000/api/health')
 ```bash
 # Run build to check for TypeScript errors
 npm run build
-
-# Check for linting errors
-npm run lint
 ```
 
 ### API Connection Test Script
@@ -280,28 +318,19 @@ npm run build
 
 # Start production server
 npm start
-
-# Run linter
-npm run lint
 ```
 
 ### Development Workflow
 
-1. **Start Backend First**:
+1. **Start backend first** (whatever command your backend repo uses).
+2. **Start frontend**:
    ```bash
-   cd D:\Whatsapp automation\Whatsapp
-   npm run dev
+   cd Messenger-Frontend
+   npm run dev -- -p 3001
    ```
-
-2. **Start Frontend**:
-   ```bash
-   cd D:\Whatsapp-Frontend
-   npm run dev
-   ```
-
-3. **Open Browser**:
+3. **Open browser**:
    - Frontend: http://localhost:3001
-   - Backend API: http://localhost:3000
+   - Backend: http://localhost:3000
 
 ### Hot Reload
 
@@ -322,7 +351,7 @@ Next.js automatically reloads when you make changes to:
 **Common Issues**:
 - **CORS Errors**: Check backend `FRONTEND_URL` configuration
 - **404 Errors**: Verify `NEXT_PUBLIC_BACKEND_URL` is correct
-- **401 Errors**: Check `NEXT_PUBLIC_ADMIN_TOKEN` matches backend token
+- **401 Errors**: Confirm the user is logged in and the app is sending `Authorization: Bearer <JWT>`
 
 ## Environment Variables
 
@@ -336,10 +365,13 @@ Next.js automatically reloads when you make changes to:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NEXT_PUBLIC_ADMIN_TOKEN` | Admin token for protected endpoints | (empty) |
 | `NEXT_PUBLIC_DEFAULT_ORG_ID` | Default organization ID | `default` |
-| `BACKEND_URL` | Backend URL for Next.js API route proxies (server only) | `http://localhost:3000` |
-| `ADMIN_TOKEN` | Admin token for server-side proxies (server only) | (empty) |
+| `BACKEND_URL` | Backend URL for Next.js API proxy routes under `app/api/*` (server only) | `http://localhost:3000` |
+| `ADMIN_TOKEN` | Admin token used by server-side proxy routes (server only) | (empty) |
+| `NEXT_PUBLIC_API_URL` | Legacy proxy base used by `app/api/feedback/*` routes | `http://localhost:3002` |
+| `ADMIN_SESSION_SECRET` | Secret used to sign the admin portal session cookie (server only) | (empty) |
+| `ADMIN_PORTAL_USERNAME` | Optional admin portal username allowlist (server only) | (empty) |
+| `ADMIN_PORTAL_PASSWORD` | Optional admin portal password allowlist (server only) | (empty) |
 
 ### Environment File
 
@@ -349,11 +381,11 @@ Create `.env.local` in the frontend root:
 # Backend API URL (required)
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3000
 
-# Admin token (optional for development)
-NEXT_PUBLIC_ADMIN_TOKEN=your_admin_token_here
-
 # Default organization ID (optional)
 NEXT_PUBLIC_DEFAULT_ORG_ID=demo-org
+
+# Admin portal session secret (server-only; required if you use /admin)
+ADMIN_SESSION_SECRET=change_me
 ```
 
 **Note**: Variables prefixed with `NEXT_PUBLIC_` are exposed to the browser. Never put sensitive secrets in these variables.
@@ -363,26 +395,36 @@ For **server-only** variables (`BACKEND_URL`, `ADMIN_TOKEN`), set them in your d
 ## Project Structure
 
 ```
-D:\Whatsapp-Frontend/
-├── app/                    # Next.js app directory
-│   ├── api/               # Legacy proxy routes (deprecated)
-│   ├── templates/         # Template pages
-│   ├── monitor/           # Monitor page
-│   ├── analytics/         # Analytics page
-│   └── page.tsx           # Dashboard
-├── components/            # React components
-│   ├── ui/               # shadcn/ui components
-│   ├── csv-uploader.tsx  # CSV upload component
-│   ├── column-mapper.tsx # Column mapping interface
+Messenger-Frontend/
+├── app/                       # Next.js app directory (App Router)
+│   ├── login/                 # Login page
+│   ├── dashboard/             # Dashboard
+│   ├── templates/             # Templates list + send flow
+│   ├── campaigns/             # Campaign scheduler
+│   ├── auto-campaigns/        # Automated campaign settings
+│   ├── analytics/             # Analytics + export
+│   ├── monitor/               # Conversation inbox
+│   ├── settings/              # Org settings + service toggles
+│   ├── feedback/              # Feedback UI (WIP)
+│   ├── loyalty-programs/      # Loyalty page (coming soon)
+│   ├── privacy-policy/        # Public privacy policy
+│   ├── api/                   # Optional/legacy Next.js route handlers
+│   ├── layout.tsx             # Root layout (AuthProvider + LayoutWrapper)
+│   └── page.tsx               # Home cards (authenticated)
+├── components/                # UI + feature components
+│   ├── ui/                    # shadcn/ui components
+│   ├── monitor/               # Monitor page components
 │   └── ...
-├── lib/                  # Utilities and helpers
-│   ├── api.ts            # API client (direct backend calls)
-│   ├── config.ts         # Frontend configuration
-│   └── services/         # Business logic services
-├── public/               # Static assets
-├── .env.local           # Environment variables (create this)
-├── package.json         # Dependencies
-└── tsconfig.json        # TypeScript configuration
+├── lib/
+│   ├── api.ts                 # API client (direct backend calls)
+│   ├── auth.ts                # Auth + localStorage helpers
+│   ├── config.ts              # URL normalization + env handling
+│   ├── services/              # Validation/mapping services
+│   └── types/                 # Shared types (campaign, pos, mapping, monitor, ...)
+├── public/                    # Static assets
+├── env.example                # Env template (copy to .env.local)
+├── package.json
+└── tsconfig.json
 ```
 
 ## Troubleshooting
@@ -393,12 +435,16 @@ D:\Whatsapp-Frontend/
 
 **Solution**:
 ```bash
-# Kill process on port 3001
-netstat -ano | findstr :3001
-taskkill /PID <PID> /F
-
-# Or use different port
+# Use a different port
 npm run dev -- -p 3002
+
+# Or free the port
+# macOS / Linux:
+#   lsof -i :3001
+#   kill -9 <PID>
+# Windows PowerShell:
+#   netstat -ano | findstr :3001
+#   taskkill /PID <PID> /F
 ```
 
 ### API Calls Failing
@@ -452,9 +498,10 @@ fetch('http://localhost:3000/api/templates')
 **Error**: `401 Unauthorized`
 
 **Solution**:
-1. Check `NEXT_PUBLIC_ADMIN_TOKEN` matches backend `ADMIN_TOKEN`
-2. Verify token is included in request headers
+1. Log in again (token may be expired)
+2. Verify the app is sending `Authorization: Bearer <JWT>` on authenticated requests
 3. Check backend logs for authentication failures
+4. For admin portal routes (`/admin/*`), ensure `ADMIN_SESSION_SECRET` is configured
 
 ### Build Errors
 
@@ -471,8 +518,6 @@ npm install
 
 ## Production Deployment
 
-See [DEPLOYMENT.md](../DEPLOYMENT.md) for complete deployment instructions.
-
 ### Deploying to Vercel
 
 High-level steps:
@@ -483,10 +528,10 @@ High-level steps:
 4. Use the default install command (`npm install`) and build command (`npm run build`).
 5. In the Vercel **Environment Variables** tab, configure:
    - `NEXT_PUBLIC_BACKEND_URL` → your production backend URL (for example, `https://csat-cloud.vercel.app`).
-   - `NEXT_PUBLIC_ADMIN_TOKEN` → optional, only if you rely on browser-side admin actions.
    - `NEXT_PUBLIC_DEFAULT_ORG_ID` → optional.
    - `BACKEND_URL` → same backend URL, used by `app/api/*` proxy routes.
    - `ADMIN_TOKEN` → server-side admin token matching the backend.
+   - `ADMIN_SESSION_SECRET` → required if you use the admin portal (`/admin/*`).
 6. Ensure your backend CORS configuration allows your Vercel domain(s) as origins.
 
 **Quick Production Build (self-hosted Node)**:
@@ -497,10 +542,10 @@ npm start
 
 ## Related Documentation
 
-- [Backend README](../README.md) - Backend setup and API documentation
-- [DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
-- [CONNECTION_ARCHITECTURE.md](../CONNECTION_ARCHITECTURE.md) - API communication details
-- [MIGRATION.md](../MIGRATION.md) - Migration from monorepo
+- [QUICK_START.md](./QUICK_START.md)
+- [HOW_TO_RUN.md](./HOW_TO_RUN.md)
+- [TESTING.md](./TESTING.md)
+- [API_CONNECTIONS_STATUS.md](./API_CONNECTIONS_STATUS.md)
 
 ## Support
 

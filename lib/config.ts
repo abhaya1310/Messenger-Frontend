@@ -44,14 +44,14 @@ function normalizeUrl(url: string | undefined, defaultUrl: string): string {
 function getApiUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const defaultUrl = 'http://localhost:3000';
-  
+
   const apiUrl = normalizeUrl(envUrl, defaultUrl);
 
   // Warn if using default in production
   if (typeof window !== 'undefined' && apiUrl === defaultUrl && !window.location.hostname.includes('localhost')) {
-    const isProduction = !window.location.hostname.includes('localhost') && 
-                         !window.location.hostname.includes('127.0.0.1');
-    
+    const isProduction = !window.location.hostname.includes('localhost') &&
+      !window.location.hostname.includes('127.0.0.1');
+
     console.error(
       '⚠️ PRODUCTION CONFIGURATION ERROR:\n' +
       'NEXT_PUBLIC_BACKEND_URL is not set. Using default localhost URL.\n' +
@@ -61,7 +61,7 @@ function getApiUrl(): string {
       `  - Current hostname: ${window.location.hostname}\n` +
       `  - Current origin: ${window.location.origin}`
     );
-    
+
     if (isProduction) {
       // In production, this is a critical error
       console.error(
@@ -85,7 +85,6 @@ if (typeof window !== 'undefined') {
 
 export const config = {
   apiUrl,
-  adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN || '',
 } as const;
 
 // Re-export auth helpers for convenience

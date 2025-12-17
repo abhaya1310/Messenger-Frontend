@@ -25,11 +25,11 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import {
-  fetchCampaignAnalytics,
-  fetchCustomerAnalytics,
+  fetchDashboardOverview,
+  fetchSegmentCounts,
   fetchCustomers,
 } from "@/lib/api";
-import type { CampaignAnalytics, CustomerAnalytics } from "@/lib/types/campaign";
+import type { DashboardOverview, SegmentCounts } from "@/lib/types/campaign";
 import type { POSCustomer } from "@/lib/types/pos";
 
 export default function DashboardPage() {
@@ -37,9 +37,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Analytics state
-  const [campaignAnalytics, setCampaignAnalytics] = useState<CampaignAnalytics | null>(null);
-  const [customerAnalytics, setCustomerAnalytics] = useState<CustomerAnalytics | null>(null);
+  // Analytics state - using new API types
+  const [dashboardOverview, setDashboardOverview] = useState<DashboardOverview | null>(null);
+  const [segmentCounts, setSegmentCounts] = useState<SegmentCounts | null>(null);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState<POSCustomer[]>([]);
 
   useEffect(() => {
@@ -51,19 +51,19 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      // Fetch all data in parallel
-      const [campaignData, customerData, customersData] = await Promise.allSettled([
-        fetchCampaignAnalytics(),
-        fetchCustomerAnalytics(),
+      // Fetch all data in parallel using new API endpoints
+      const [overviewData, segmentsData, customersData] = await Promise.allSettled([
+        fetchDashboardOverview(),
+        fetchSegmentCounts(),
         fetchCustomers({ limit: 10, sortBy: 'lastVisitAt', sortOrder: 'desc' }),
       ]);
 
-      if (campaignData.status === 'fulfilled') {
-        setCampaignAnalytics(campaignData.value);
+      if (overviewData.status === 'fulfilled') {
+        setDashboardOverview(overviewData.value);
       }
       
-      if (customerData.status === 'fulfilled') {
-        setCustomerAnalytics(customerData.value);
+      if (segmentsData.status === 'fulfilled') {
+        setSegmentCounts(segmentsData.value);
       }
 
       if (customersData.status === 'fulfilled') {
@@ -91,27 +91,50 @@ export default function DashboardPage() {
     }
   }
 
-  // Derived stats with fallbacks
-  const frequencyStats = customerAnalytics ? [
-    { label: "Active Customers", value: customerAnalytics.summary.activeCustomers, percent: customerAnalytics.summary.totalCustomers > 0 ? (customerAnalytics.summary.activeCustomers / customerAnalytics.summary.totalCustomers) * 100 : 0 },
-    { label: "New This Month", value: customerAnalytics.summary.newCustomersThisMonth, percent: customerAnalytics.summary.totalCustomers > 0 ? (customerAnalytics.summary.newCustomersThisMonth / customerAnalytics.summary.totalCustomers) * 100 : 0 },
-    { label: "Lapsed Customers", value: customerAnalytics.summary.lapsedCustomers, percent: customerAnalytics.summary.totalCustomers > 0 ? (customerAnalytics.summary.lapsedCustomers / customerAnalytics.summary.totalCustomers) * 100 : 0 },
-    { label: "Total Customers", value: customerAnalytics.summary.totalCustomers, percent: 100 },
+  // Derived stats with fallbacks - using new API structure
+  // Using segmentCounts for customer breakdown and dashboardOverview for campaign/message stats
+  const total = segmentCounts?.total || dashboardOverview?.customers.total || 0;
+  
+  const frequencyStats = dashboardOverview ? [
+    { label: "Active Customers", value: dashboardOverview.customers.active, percent: total > 0 ? (dashboardOverview.customers.active / total) * 100 : 0 },
+    { label: "New Customers", value: dashboardOverview.customers.new, percent: total > 0 ? (dashboardOverview.customers.new / total) * 100 : 0 },
+    { label: "At Risk", value: dashboardOverview.customers.atRisk, percent: total > 0 ? (dashboardOverview.customers.atRisk / total) * 100 : 0 },
+    { label: "Lapsed", value: dashboardOverview.customers.lapsed, percent: total > 0 ? (dashboardOverview.customers.lapsed / total) * 100 : 0 },
+  ] : segmentCounts ? [
+    { label: "Active Customers", value: segmentCounts.recency.active, percent: total > 0 ? (segmentCounts.recency.active / total) * 100 : 0 },
+    { label: "Loyal Customers", value: segmentCounts.frequency.loyal, percent: total > 0 ? (segmentCounts.frequency.loyal / total) * 100 : 0 },
+    { label: "At Risk", value: segmentCounts.recency.at_risk, percent: total > 0 ? (segmentCounts.recency.at_risk / total) * 100 : 0 },
+    { label: "Lapsed", value: segmentCounts.recency.lapsed, percent: total > 0 ? (segmentCounts.recency.lapsed / total) * 100 : 0 },
   ] : [
     { label: "Active Customers", value: 0, percent: 0 },
-    { label: "New This Month", value: 0, percent: 0 },
-    { label: "Lapsed Customers", value: 0, percent: 0 },
-    { label: "Total Customers", value: 0, percent: 100 },
+    { label: "Loyal Customers", value: 0, percent: 0 },
+    { label: "At Risk", value: 0, percent: 0 },
+    { label: "Lapsed", value: 0, percent: 0 },
   ];
+
+  // Segment breakdown for additional visualization
+  const segmentBreakdown = segmentCounts ? {
+    frequency: [
+      { label: "New", value: segmentCounts.frequency.new, color: "bg-green-500" },
+      { label: "Returning", value: segmentCounts.frequency.returning, color: "bg-blue-500" },
+      { label: "Loyal", value: segmentCounts.frequency.loyal, color: "bg-purple-500" },
+      { label: "VIP", value: segmentCounts.frequency.vip, color: "bg-amber-500" },
+    ],
+    recency: [
+      { label: "Active", value: segmentCounts.recency.active, color: "bg-green-500" },
+      { label: "At Risk", value: segmentCounts.recency.at_risk, color: "bg-yellow-500" },
+      { label: "Lapsed", value: segmentCounts.recency.lapsed, color: "bg-red-500" },
+    ],
+  } : null;
 
   const programCards = [
     {
       title: "Campaigns",
       tone: "bg-[#e8f4ff]",
       metrics: [
-        { label: "Total Campaigns", value: campaignAnalytics?.summary.totalCampaigns?.toString() || "0" },
-        { label: "Active Now", value: campaignAnalytics?.summary.activeCampaigns?.toString() || "0" },
-        { label: "Total Sent", value: campaignAnalytics?.summary.totalSent?.toLocaleString() || "0" },
+        { label: "Sent (30d)", value: dashboardOverview?.campaigns.sent30d?.toLocaleString() || "0" },
+        { label: "Sent (7d)", value: dashboardOverview?.campaigns.sent7d?.toLocaleString() || "0" },
+        { label: "Sent (24h)", value: dashboardOverview?.campaigns.sent24h?.toLocaleString() || "0" },
       ],
       href: "/campaigns",
     },
@@ -119,9 +142,9 @@ export default function DashboardPage() {
       title: "Auto-campaigns",
       tone: "bg-[#f6f1ff]",
       metrics: [
-        { label: "Delivery Rate", value: `${campaignAnalytics?.summary.deliveryRate?.toFixed(1) || 0}%` },
-        { label: "Read Rate", value: `${campaignAnalytics?.summary.readRate?.toFixed(1) || 0}%` },
-        { label: "Total Delivered", value: campaignAnalytics?.summary.totalDelivered?.toLocaleString() || "0" },
+        { label: "Delivery Rate", value: `${dashboardOverview?.messages.deliveryRate?.toFixed(1) || 0}%` },
+        { label: "Read Rate", value: `${dashboardOverview?.messages.readRate?.toFixed(1) || 0}%` },
+        { label: "Total Sent", value: dashboardOverview?.campaigns.totalSent?.toLocaleString() || "0" },
       ],
       href: "/auto-campaigns",
     },
@@ -129,32 +152,34 @@ export default function DashboardPage() {
       title: "Customers",
       tone: "bg-[#e9f9ed]",
       metrics: [
-        { label: "Total Customers", value: customerAnalytics?.summary.totalCustomers?.toLocaleString() || "0" },
-        { label: "Active", value: customerAnalytics?.summary.activeCustomers?.toLocaleString() || "0" },
-        { label: "Lapsed", value: customerAnalytics?.summary.lapsedCustomers?.toLocaleString() || "0" },
+        { label: "Total", value: (dashboardOverview?.customers.total || segmentCounts?.total || 0).toLocaleString() },
+        { label: "Active", value: (dashboardOverview?.customers.active || segmentCounts?.recency.active || 0).toLocaleString() },
+        { label: "VIP", value: (dashboardOverview?.customers.vip || segmentCounts?.frequency.vip || 0).toLocaleString() },
       ],
       href: "/analytics",
     },
     {
-      title: "Feedback",
+      title: "Revenue",
       tone: "bg-[#fff3e6]",
       metrics: [
-        { label: "Total Responses", value: "—" },
-        { label: "Avg. Rating", value: "—" },
-        { label: "Positive %", value: "—" },
+        { label: "Last 30 Days", value: dashboardOverview?.revenue.total30d ? `₹${dashboardOverview.revenue.total30d.toLocaleString()}` : "—" },
+        { label: "Avg Order", value: dashboardOverview?.revenue.avgOrderValue ? `₹${dashboardOverview.revenue.avgOrderValue.toLocaleString()}` : "—" },
+        { label: "Feedback", value: "—" },
       ],
       href: "/feedback",
     },
   ];
 
   const highlightStats = [
-    { label: "Total Sent", value: campaignAnalytics?.summary.totalSent?.toLocaleString() || "0" },
-    { label: "Delivered", value: campaignAnalytics?.summary.totalDelivered?.toLocaleString() || "0" },
-    { label: "Read", value: campaignAnalytics?.summary.totalRead?.toLocaleString() || "0" },
-    { label: "Active Campaigns", value: campaignAnalytics?.summary.activeCampaigns?.toString() || "0" },
+    { label: "Total Sent", value: dashboardOverview?.campaigns.totalSent?.toLocaleString() || "0" },
+    { label: "Delivery Rate", value: `${dashboardOverview?.messages.deliveryRate?.toFixed(1) || 0}%` },
+    { label: "Read Rate", value: `${dashboardOverview?.messages.readRate?.toFixed(1) || 0}%` },
+    { label: "Customers", value: (dashboardOverview?.customers.total || segmentCounts?.total || 0).toLocaleString() },
   ];
 
-  const topCustomers = customerAnalytics?.topCustomers?.slice(0, 5) || [];
+  // Top customers from segment data (VIP + Loyal)
+  const vipCount = dashboardOverview?.customers.vip || segmentCounts?.frequency.vip || 0;
+  const loyalCount = dashboardOverview?.customers.loyal || segmentCounts?.frequency.loyal || 0;
 
   const creditPackages = [
     {
@@ -238,40 +263,40 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {customerAnalytics?.summary.totalCustomers?.toLocaleString() || "0"}
+              {(dashboardOverview?.customers.total || segmentCounts?.total || 0).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">
-              {customerAnalytics?.summary.newCustomersThisMonth || 0} new this month
+              {dashboardOverview?.customers.new || 0} new this period
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
+            <CardTitle className="text-sm font-medium">Messages Sent (30d)</CardTitle>
             <Megaphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {campaignAnalytics?.summary.activeCampaigns || 0}
+              {dashboardOverview?.campaigns.sent30d?.toLocaleString() || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              {campaignAnalytics?.summary.totalCampaigns || 0} total campaigns
+              {dashboardOverview?.campaigns.totalSent?.toLocaleString() || 0} total sent
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Messages Sent</CardTitle>
+            <CardTitle className="text-sm font-medium">Delivery Rate</CardTitle>
             <MessageCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {campaignAnalytics?.summary.totalSent?.toLocaleString() || "0"}
+              {dashboardOverview?.messages.deliveryRate?.toFixed(1) || 0}%
             </div>
             <p className="text-xs text-muted-foreground">
-              {campaignAnalytics?.summary.deliveryRate?.toFixed(1) || 0}% delivery rate
+              of all messages delivered
             </p>
           </CardContent>
         </Card>
@@ -283,10 +308,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {campaignAnalytics?.summary.readRate?.toFixed(1) || 0}%
+              {dashboardOverview?.messages.readRate?.toFixed(1) || 0}%
             </div>
             <p className="text-xs text-muted-foreground">
-              {campaignAnalytics?.summary.totalRead?.toLocaleString() || 0} messages read
+              of delivered messages read
             </p>
           </CardContent>
         </Card>
@@ -434,23 +459,40 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>Top Customers</CardTitle>
+            <CardTitle>Customer Segments</CardTitle>
             <Info className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            {topCustomers.length > 0 ? (
-              <div className="space-y-3">
-                {topCustomers.map((customer, index) => (
-                  <div key={index} className="flex items-center justify-between py-2 border-b last:border-0">
-                    <div>
-                      <p className="font-medium">{customer.name}</p>
-                      <p className="text-sm text-gray-500">{customer.visits} visits</p>
-                    </div>
-                    <p className="font-semibold text-[var(--connectnow-accent-strong)]">
-                      ₹{customer.totalSpend.toLocaleString()}
-                    </p>
+            {segmentBreakdown ? (
+              <div className="space-y-6">
+                {/* Frequency Segments */}
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-3">By Visit Frequency</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {segmentBreakdown.frequency.map((segment) => (
+                      <div key={segment.label} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${segment.color}`} />
+                          <span className="text-sm">{segment.label}</span>
+                        </div>
+                        <span className="font-semibold">{segment.value.toLocaleString()}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+                {/* Recency Segments */}
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-3">By Recency</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {segmentBreakdown.recency.map((segment) => (
+                      <div key={segment.label} className="text-center p-2 bg-gray-50 rounded-lg">
+                        <span className={`inline-block h-2 w-2 rounded-full ${segment.color} mb-1`} />
+                        <p className="text-lg font-semibold">{segment.value.toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">{segment.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">

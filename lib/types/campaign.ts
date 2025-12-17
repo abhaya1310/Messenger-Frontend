@@ -1,4 +1,8 @@
-// Campaign and Auto-Campaign Types
+// Campaign and Campaign Configuration Types
+
+// ============================================================================
+// One-Time Campaign Types (Event/Promotional/Announcement)
+// ============================================================================
 
 export interface CampaignTemplate {
   name: string;
@@ -48,7 +52,7 @@ export interface Campaign {
   updatedAt: string;
 }
 
-// API Request Types
+// API Request Types for One-Time Campaigns
 export interface CampaignListParams {
   status?: 'draft' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled';
   type?: 'event' | 'promotional' | 'announcement';
@@ -93,7 +97,198 @@ export interface AudiencePreviewResponse {
   }>;
 }
 
-// Auto Campaign Types
+// ============================================================================
+// Campaign Configuration Types (Auto Campaigns - Config Based)
+// ============================================================================
+
+export interface BirthdayConfig {
+  enabled: boolean;
+  daysOffset: number;       // -7 = 7 days before, 0 = on day, 3 = 3 days after
+  sendTime: string;         // "10:00" (24hr format)
+  minVisits: number;
+  templateId: string;       // Read-only, set by admin
+}
+
+export interface AnniversaryConfig {
+  enabled: boolean;
+  daysOffset: number;
+  sendTime: string;
+  minVisits: number;
+  templateId: string;
+}
+
+export interface FirstVisitConfig {
+  enabled: boolean;
+  daysAfter: number;        // Days after first visit (1-30)
+  sendTime: string;
+  templateId: string;
+}
+
+export interface WinbackTier {
+  days: number;             // 15, 30, 60, 90
+  enabled: boolean;
+  templateId: string;
+}
+
+export interface WinbackConfig {
+  enabled: boolean;
+  tiers: WinbackTier[];
+  cooldownDays: number;     // Min days between messages
+  minVisits: number;
+}
+
+export interface FestivalConfig {
+  id: string;               // Auto-generated
+  name: string;
+  date: string;             // "MM-DD" format
+  year?: number;            // Optional: for one-time events
+  daysOffset: number;       // Days before to send
+  enabled: boolean;
+  templateId: string;
+}
+
+export interface UtilityConfig {
+  billMessaging: {
+    enabled: boolean;
+    autoSend: boolean;      // Auto-send after transaction
+    templateId: string;
+  };
+  feedback: {
+    enabled: boolean;
+    delayMinutes: number;   // 15-1440 minutes
+    templateId: string;
+  };
+  reviewRequest: {
+    enabled: boolean;
+    daysAfterVisit: number;
+    reviewLink: string;     // Google/Zomato URL
+    templateId: string;
+  };
+}
+
+export interface CampaignConfig {
+  orgId: string;
+  birthday: BirthdayConfig;
+  anniversary: AnniversaryConfig;
+  firstVisit: FirstVisitConfig;
+  winback: WinbackConfig;
+  festivals: FestivalConfig[];
+  utility: UtilityConfig;
+  defaultSendTime: string;
+  timezone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================================
+// Analytics Types
+// ============================================================================
+
+export interface DashboardOverview {
+  customers: {
+    total: number;
+    new: number;
+    returning: number;
+    loyal: number;
+    vip: number;
+    active: number;
+    atRisk: number;
+    lapsed: number;
+  };
+  campaigns: {
+    totalSent: number;
+    sent24h: number;
+    sent7d: number;
+    sent30d: number;
+  };
+  messages: {
+    deliveryRate: number;   // Percentage
+    readRate: number;       // Percentage
+  };
+  revenue: {
+    total30d: number;
+    avgOrderValue: number;
+  };
+}
+
+export interface CampaignStats {
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  pending: number;
+  deliveryRate: number;     // Percentage
+  readRate: number;         // Percentage
+}
+
+export interface AutoCampaignStats {
+  birthday: CampaignStats;
+  anniversary: CampaignStats;
+  winback: CampaignStats;
+  festival: CampaignStats;
+  firstVisit: CampaignStats;
+  feedback: CampaignStats;
+}
+
+export interface TemplateStats {
+  templateName: string;
+  totalSent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  deliveryRate: number;
+  readRate: number;
+  lastUsed?: string;        // ISO date string
+}
+
+export interface TemplatePerformance {
+  summary: TemplateStats;
+  timeseries: Array<{
+    date: string;
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+  }>;
+}
+
+export interface SegmentCounts {
+  frequency: {
+    new: number;
+    returning: number;
+    loyal: number;
+    vip: number;
+  };
+  recency: {
+    active: number;
+    at_risk: number;
+    lapsed: number;
+  };
+  total: number;
+}
+
+// Audience Filter (for preview)
+export interface SegmentFilter {
+  frequency?: ('new' | 'returning' | 'loyal' | 'vip')[];
+  recency?: ('active' | 'at_risk' | 'lapsed')[];
+  minVisits?: number;
+  maxVisits?: number;
+  minSpend?: number;
+  maxSpend?: number;
+  minDaysSinceVisit?: number;
+  maxDaysSinceVisit?: number;
+}
+
+export interface AudiencePreviewResult {
+  audienceCount: number;
+  filter: SegmentFilter & { whatsappOptIn: boolean };
+}
+
+// ============================================================================
+// Legacy Types (Deprecated - kept for backward compatibility during migration)
+// ============================================================================
+
+/** @deprecated Use CampaignConfig-based approach instead */
 export interface AutoCampaignTriggerConfig {
   runTime?: string;
   maxSendsPerCustomer?: number;
@@ -103,6 +298,7 @@ export interface AutoCampaignTriggerConfig {
   postVisit?: { daysAfter: number; visitType: 'first' | 'any' };
 }
 
+/** @deprecated Use CampaignConfig-based approach instead */
 export interface AutoCampaignMetrics {
   totalSent: number;
   totalDelivered: number;
@@ -112,6 +308,7 @@ export interface AutoCampaignMetrics {
   lastRunCount?: number;
 }
 
+/** @deprecated Use CampaignConfig-based approach instead */
 export interface AutoCampaign {
   _id: string;
   orgId: string;
@@ -131,6 +328,7 @@ export interface AutoCampaign {
   updatedAt: string;
 }
 
+/** @deprecated Use CampaignConfig-based approach instead */
 export interface CreateAutoCampaignRequest {
   name: string;
   triggerType: 'birthday' | 'anniversary' | 'winback' | 'first_visit_followup';
@@ -151,7 +349,7 @@ export interface CreateAutoCampaignRequest {
   };
 }
 
-// Campaign Analytics
+/** @deprecated Use DashboardOverview instead */
 export interface CampaignAnalytics {
   summary: {
     totalCampaigns: number;
@@ -171,6 +369,7 @@ export interface CampaignAnalytics {
   recentCampaigns: Campaign[];
 }
 
+/** @deprecated Use SegmentCounts instead */
 export interface CustomerAnalytics {
   summary: {
     totalCustomers: number;
@@ -189,4 +388,3 @@ export interface CustomerAnalytics {
     visits: number;
   }>;
 }
-

@@ -1,0 +1,317 @@
+# ConnectNow Command Center — Frontend Architecture
+
+This document describes the current architecture of the **ConnectNow Command Center** frontend located in `Messenger-Frontend/`.
+
+## Goals
+
+- Document how the Next.js frontend is structured (routing, layout, auth).
+- Document how the frontend talks to backend services (direct calls + legacy proxies).
+- Provide a reference for debugging, onboarding, and deployment.
+
+## High-level Architecture
+
+The frontend is a **Next.js 15** app (App Router) that primarily performs **client-side** data fetching against a backend API.
+
+```text
++------------------------------+              +------------------------------+
+|      Browser (User)          |              |            Backend            |
+|  Next.js Frontend UI         |   HTTPS/HTTP |  REST APIs (Express, etc.)    |
+|  http://localhost:3000/3001  +------------->|  http://localhost:3000        |
+|                              |              |                              |
+|  - app/* pages               |              |  /api/auth/login              |
+|  - components/*              |              |  /api/templates               |
+|  - lib/api.ts (API client)   |              |  /api/campaigns, /api/pos/*   |
+|  - lib/auth.ts (localStorage)|              |  /conversations, /send-text   |
++--------------+---------------+              +------------------------------+
+               |
+               | (Optional / Legacy)
+               v
++------------------------------+
+| Next.js Route Handlers       |
+| app/api/*                    |
+| Proxy to backend using       |
+| BACKEND_URL / ADMIN_TOKEN    |
++------------------------------+
+```
+
+## Tech Stack
+
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript
+- **UI**: Tailwind + shadcn/ui
+- **Icons**: lucide-react
+- **State**: React state/hooks + localStorage (no global store)
+
+## Repository Structure (Frontend)
+
+```text
+Messenger-Frontend/
+  app/                    # Next.js app router pages + route handlers
+  components/             # reusable components (incl. ui/)
+  lib/                    # API client, auth helpers, config, domain logic
+  public/                 # static assets
+  env.example             # environment variable template
+  package.json
+```
+
+## Routing Model
+
+Next.js App Router routes are defined by folders under `app/`.
+
+Key pages:
+
+- `/login`
+- `/dashboard`
+- `/templates`
+- `/templates/[templateName]/send`
+- `/campaigns`
+- `/auto-campaigns`
+- `/analytics`
+- `/monitor`
+- `/settings`
+- `/privacy-policy`
+
+## Layout & Auth Gating
+
+### Root Layout
+
+`app/layout.tsx` wraps the app in:
+
+- `AuthProvider` (`components/auth-provider.tsx`)
+- `LayoutWrapper` (`components/layout-wrapper.tsx`)
+
+### AuthProvider
+
+`AuthProvider` is the client-side auth state container.
+
+- Loads stored auth on mount using `getStoredAuth()`.
+- Exposes `login`, `loginLegacy`, and `logout`.
+
+### LayoutWrapper
+
+`LayoutWrapper` is responsible for:
+
+- Applying shell UI (sidebar/layout)
+- Redirecting unauthenticated users to `/login` for protected routes
+
+## Authentication Model
+
+### Login
+
+- UI: `app/login/page.tsx`
+- Backend call: `POST ${NEXT_PUBLIC_BACKEND_URL}/api/auth/login`
+- Implementation: `lib/auth.ts` (`login()`)
+- Session validation: `GET ${NEXT_PUBLIC_BACKEND_URL}/api/auth/me` (called on app boot when a token exists)
+
+### Stored State
+
+`lib/auth.ts` stores auth state in `localStorage`:
+
+- `connectnow_auth` (user + isAuthenticated)
+- `connectnow_token` (JWT/opaque token)
+- `connectnow_org` ({ orgId, orgName })
+
+### Headers & Authorization
+
+There are two major auth mechanisms used across endpoints:
+
+- **Bearer token**: `Authorization: Bearer <token>`
+
+Tenant scoping:
+
+- For end-user UI requests, the backend should infer `orgId` from the JWT.
+- `X-ORG-ID` is treated as legacy/fallback and is only sent when there is no JWT.
+- **Temporary backend constraint**: for admin proxy calls under `/api/admin/**`, the frontend currently always forwards `X-ORG-ID` (even when the admin JWT is present), because many admin endpoints still select tenant via the header.
+
+### Admin Portal Auth (server-side session cookie)
+
+The admin portal uses a server-only session cookie to avoid exposing admin JWTs in browser JS.
+
+- Admin UI: `/admin/*`
+- Admin login proxy: `app/api/admin/auth/login/route.ts`
+  - Calls backend `POST /api/auth/login`
+  - Stores the returned admin JWT in an httpOnly cookie (`connectnow_admin_session`)
+- Admin proxy routes under `app/api/admin/*` read that cookie, validate it, and forward requests to the backend with:
+  - `Authorization: Bearer <admin JWT>`
+  - `X-ORG-ID: <orgId>`
+
+
+### User Onboarding (Access Code)
+
+The main user onboarding flow is access-code based:
+
+- UI route: `/onboarding`
+- Verify: `POST /api/auth/register/verify`
+- Complete: `POST /api/auth/register/complete`
+- After success, user is redirected to `/login` (no auto-login).
+
+## Backend Communication
+
+### Primary pattern: Direct backend calls
+
+The canonical backend base URL is:
+
+- `lib/config.ts` → `config.apiUrl`
+- Derived from `NEXT_PUBLIC_BACKEND_URL` (defaults to `http://localhost:3000`)
+
+The primary API module is `lib/api.ts`:
+
+- `fetchWithErrorHandling()` wraps `fetch()` with improved errors (incl. CORS hints).
+- Many functions assert they are called client-side (`typeof window !== 'undefined'`).
+
+Examples:
+
+- Templates: `fetchTemplates()`, `analyzeTemplate()`, `analyzeCsv()`, `sendTemplateDynamic()`
+- Monitor: `fetchConversations()`, `fetchConversationMessages()`, `updateConversationMetadata()`, `sendTextMessage()`
+- POS/Campaign: `apiClient()` injects `Authorization` when available, and uses `X-ORG-ID` only as a fallback when no token exists
+
+### Legacy pattern: Next.js proxy route handlers (`app/api/*`)
+
+This repo still contains route handlers that proxy backend requests.
+
+- Templates proxies use:
+  - `BACKEND_URL || NEXT_PUBLIC_BACKEND_URL || http://localhost:3000`
+  - `ADMIN_TOKEN` (server-side) for protected calls
+- Feedback proxies use:
+  - `NEXT_PUBLIC_API_URL || http://localhost:3002`
+  - `ADMIN_TOKEN` (server-side)
+
+Current proxy routes:
+
+- `app/api/templates/route.ts`
+- `app/api/templates/analyze/route.ts`
+- `app/api/csv/analyze/route.ts`
+- `app/api/analytics/route.ts`
+- `app/api/analytics/export/route.ts`
+- `app/api/feedback/send/route.ts`
+- `app/api/feedback/preview/route.ts`
+
+Admin proxy routes:
+
+- `app/api/admin/orgs/route.ts`
+- `app/api/admin/org/[orgId]/route.ts`
+- `app/api/admin/org/[orgId]/whatsapp/update-phone-number-id/route.ts`
+- `app/api/admin/org/[orgId]/whatsapp/configure-shared/route.ts`
+- `app/api/admin/org/[orgId]/whatsapp/configure-dedicated/route.ts`
+
+The repo includes `app/api/README.md` marking these as deprecated.
+
+## Key Feature Flows
+
+### 1) Login
+
+```text
+/login -> lib/auth.login() -> POST /api/auth/login
+     -> storeAuthData() in localStorage
+     -> user is redirected to authenticated routes
+```
+
+### 2) Templates Browse
+
+- Page: `app/templates/page.tsx`
+- Data: `lib/api.fetchTemplates()` (direct backend call)
+- Local caching: `lib/template-cache` (in-memory/local cache used to reduce calls)
+
+### 3) Template Bulk Send
+
+- Route: `/templates/[templateName]/send`
+- Major steps:
+  - Upload CSV
+  - Backend analysis (`/api/csv/analyze`) to detect columns and suggestions
+  - Column mapping UI
+  - Send messages in batches via `/api/send-template-dynamic`
+
+### 4) Campaigns
+
+- Route: `/campaigns`
+- Uses `lib/api.ts` campaign functions (via `apiClient()`)
+- Uses org + token headers when available
+
+### 5) Auto Campaign Configuration
+
+- Route: `/auto-campaigns`
+- Uses `/api/campaign-config*` endpoints via `apiClient()`
+
+### 6) Monitor (Conversation Inbox)
+
+- Route: `/monitor`
+- Uses:
+  - `GET /conversations`
+  - `GET /conversations/:phone/messages`
+  - `PATCH /conversations/:phone/metadata`
+  - `POST /send-text`
+- Behavior:
+  - Polling to refresh conversations/messages
+  - Responsive UI (inbox + thread + metadata panel)
+
+### 7) Analytics
+
+- Route: `/analytics`
+- Uses:
+  - `GET /api/analytics`
+  - `GET /api/analytics/export` (CSV download)
+  - Multitenant endpoints (e.g. `/analytics/summary`) with `X-ORG-ID`
+
+### 8) Settings
+
+- Route: `/settings`
+- Updates org configuration and service toggles using `apiClient()`.
+
+## State Management
+
+- **Local component state**: `useState`, `useEffect`
+- **Auth state**: `AuthProvider` + `localStorage`
+- **Caching**:
+  - Templates page uses a dedicated cache helper (`lib/template-cache`).
+
+There is currently no centralized state library (Redux/Zustand/etc.).
+
+## Error Handling & Observability
+
+- `lib/api.ts`:
+  - Throws enriched errors for non-2xx responses
+  - Adds actionable CORS diagnostics when `Failed to fetch` occurs
+- Many pages log key actions to the console for debugging.
+
+## Environment Variables
+
+Client-exposed:
+
+- `NEXT_PUBLIC_BACKEND_URL` (required for correct deployments)
+- `NEXT_PUBLIC_DEFAULT_ORG_ID` (optional)
+- `NEXT_PUBLIC_API_URL` (legacy; used by feedback proxy route handlers)
+
+Server-only (used by Next.js route handlers under `app/api/*`):
+
+- `BACKEND_URL`
+- `ADMIN_TOKEN`
+
+Server-only (used by admin portal session):
+
+- `ADMIN_SESSION_SECRET`
+- `ADMIN_PORTAL_USERNAME` (optional)
+- `ADMIN_PORTAL_PASSWORD` (optional)
+
+## Local Development Notes
+
+- Next.js defaults to port `3000`.
+- If backend uses `3000`, run frontend on a different port:
+  - `npm run dev -- -p 3001`
+
+CORS:
+
+- When frontend and backend run on different origins, backend must allow the frontend origin.
+
+## Deployment Notes
+
+- Configure `NEXT_PUBLIC_BACKEND_URL` in the hosting platform.
+- If you still rely on Next.js proxy routes (`app/api/*`), also configure `BACKEND_URL` and `ADMIN_TOKEN`.
+
+## Known Gaps / Footguns
+
+- `app/templates/page.tsx` calls `POST /api/templates/cache/clear`, but there is **no** corresponding route handler found under `app/api/templates/cache/clear`.
+  - If this endpoint is required, it needs to be implemented in `app/api/templates/cache/clear/route.ts` or updated to call the backend directly.
+
+---
+
+If you want, I can also add a small diagram per feature (Templates, Monitor, Campaigns) with request/response shapes and the exact headers each flow uses.

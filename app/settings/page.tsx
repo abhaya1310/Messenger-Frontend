@@ -12,17 +12,16 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import {
   Settings,
   Loader2,
-  Save,
   RefreshCcw,
   Smartphone,
   MessageSquare,
   Megaphone,
   Gift,
   Star,
-  Bell,
   Database,
   CheckCircle,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { fetchOrgSettings, updateServiceConfig } from "@/lib/api";
@@ -48,16 +47,16 @@ const services: ServiceConfig[] = [
   {
     key: "feedback",
     title: "Feedback Requests",
-    description: "Automatically request feedback after transactions",
+    description: "Request feedback after transactions (configure details in Campaign Settings)",
     icon: Star,
-    hasConfig: true,
+    hasConfig: false, // Detailed config moved to Auto-Campaigns page
   },
   {
     key: "billMessaging",
     title: "Bill Messaging",
-    description: "Send digital bills via WhatsApp",
+    description: "Send digital bills via WhatsApp (configure details in Campaign Settings)",
     icon: MessageSquare,
-    hasConfig: true,
+    hasConfig: false, // Detailed config moved to Auto-Campaigns page
   },
   {
     key: "eventCampaigns",
@@ -66,13 +65,7 @@ const services: ServiceConfig[] = [
     icon: Megaphone,
     hasConfig: true,
   },
-  {
-    key: "autoCampaigns",
-    title: "Auto Campaigns",
-    description: "Automated birthday, anniversary, and win-back campaigns",
-    icon: Bell,
-    hasConfig: true,
-  },
+  // Note: autoCampaigns removed - now fully managed in Campaign Settings page
   {
     key: "loyalty",
     title: "Loyalty Program",
@@ -321,6 +314,33 @@ export default function SettingsPage() {
           </Card>
         )}
 
+        {/* Campaign Settings Link */}
+        <Card className="mb-6 bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Megaphone className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Campaign Settings</CardTitle>
+                  <CardDescription>
+                    Configure automated campaigns (birthday, anniversary, festivals), utility messaging (bills, feedback, reviews), and more
+                  </CardDescription>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                className="gap-2 border-purple-300 hover:bg-purple-100"
+                onClick={() => window.location.href = '/auto-campaigns'}
+              >
+                Configure
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+        </Card>
+
         {/* Services */}
         <h2 className="text-xl font-semibold mb-4">Services</h2>
         <div className="space-y-4">
@@ -381,61 +401,6 @@ export default function SettingsPage() {
                       </div>
                     )}
 
-                    {/* Feedback Config */}
-                    {service.key === "feedback" && serviceSettings && 'autoSendAfterTransaction' in serviceSettings && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label>Auto-send after transaction</Label>
-                            <p className="text-sm text-gray-500">
-                              Automatically request feedback after each transaction
-                            </p>
-                          </div>
-                          <Switch
-                            checked={serviceSettings.autoSendAfterTransaction}
-                            onCheckedChange={(checked) =>
-                              handleUpdateServiceConfig(service.key, { autoSendAfterTransaction: checked })
-                            }
-                          />
-                        </div>
-                        {serviceSettings.autoSendAfterTransaction && (
-                          <div className="space-y-2">
-                            <Label>Delay (minutes)</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              max={1440}
-                              value={serviceSettings.delayMinutes}
-                              onChange={(e) =>
-                                handleUpdateServiceConfig(service.key, {
-                                  delayMinutes: parseInt(e.target.value) || 30,
-                                })
-                              }
-                              className="w-32"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Bill Messaging Config */}
-                    {service.key === "billMessaging" && serviceSettings && 'autoSend' in serviceSettings && (
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label>Auto-send bills</Label>
-                          <p className="text-sm text-gray-500">
-                            Automatically send digital bills via WhatsApp
-                          </p>
-                        </div>
-                        <Switch
-                          checked={serviceSettings.autoSend}
-                          onCheckedChange={(checked) =>
-                            handleUpdateServiceConfig(service.key, { autoSend: checked })
-                          }
-                        />
-                      </div>
-                    )}
-
                     {/* Event Campaigns Config */}
                     {service.key === "eventCampaigns" && serviceSettings && 'maxPerMonth' in serviceSettings && (
                       <div className="space-y-2">
@@ -452,30 +417,6 @@ export default function SettingsPage() {
                           }
                           className="w-32"
                         />
-                      </div>
-                    )}
-
-                    {/* Auto Campaigns Config */}
-                    {service.key === "autoCampaigns" && serviceSettings && 'allowedTriggers' in serviceSettings && (
-                      <div className="space-y-2">
-                        <Label>Allowed Triggers</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {["birthday", "anniversary", "winback", "first_visit_followup"].map((trigger) => (
-                            <Badge
-                              key={trigger}
-                              variant={serviceSettings.allowedTriggers.includes(trigger) ? "default" : "outline"}
-                              className="cursor-pointer"
-                              onClick={() => {
-                                const newTriggers = serviceSettings.allowedTriggers.includes(trigger)
-                                  ? serviceSettings.allowedTriggers.filter((t) => t !== trigger)
-                                  : [...serviceSettings.allowedTriggers, trigger];
-                                handleUpdateServiceConfig(service.key, { allowedTriggers: newTriggers });
-                              }}
-                            >
-                              {trigger.replace(/_/g, " ")}
-                            </Badge>
-                          ))}
-                        </div>
                       </div>
                     )}
                   </CardContent>

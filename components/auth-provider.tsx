@@ -13,6 +13,7 @@ import {
   clearAuth,
   type LoginCredentials,
   type AuthState,
+  validateSessionWithMeEndpoint,
   // Legacy support
   validateCredentials,
 } from "@/lib/auth";
@@ -43,21 +44,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load stored auth on mount
   useEffect(() => {
-    const stored = getStoredAuth();
-    setAuthState(stored);
-    setIsLoading(false);
+    const bootstrap = async () => {
+      const stored = getStoredAuth();
+
+      if (stored.token) {
+        const ok = await validateSessionWithMeEndpoint(stored.token).catch(() => false);
+        if (!ok) {
+          clearAuth();
+          setAuthState({
+            isAuthenticated: false,
+            user: null,
+            orgId: null,
+            orgName: null,
+            token: null,
+          });
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      setAuthState(stored);
+      setIsLoading(false);
+    };
+
+    bootstrap();
   }, []);
 
   // New API-based login
   const login = async (credentials: LoginCredentials): Promise<boolean> => {
     try {
       const response = await apiLogin(credentials);
+
+      const token = response.accessToken || response.token || null;
+      const orgId = response.user?.orgId || response.orgId || null;
+      const orgName = response.orgName || null;
       setAuthState({
         isAuthenticated: true,
         user: response.user,
-        orgId: response.orgId,
-        orgName: response.orgName,
-        token: response.token,
+        orgId,
+        orgName,
+        token,
       });
       return true;
     } catch (error) {

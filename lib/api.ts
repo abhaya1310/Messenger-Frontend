@@ -50,7 +50,7 @@ async function fetchWithErrorHandling(
         `Backend CORS configuration should include:\n` +
         `  Access-Control-Allow-Origin: ${frontendOrigin} (or * for development)\n` +
         `  Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\n` +
-        `  Access-Control-Allow-Headers: Content-Type, X-ADMIN-TOKEN, X-ORG-ID\n\n` +
+        `  Access-Control-Allow-Headers: Content-Type, X-ORG-ID\n\n` +
         `If you're using Express.js, add:\n` +
         `  app.use(cors({ origin: '${frontendOrigin}' }));\n\n` +
         `Or set FRONTEND_URL environment variable in your backend to: ${frontendOrigin}`;
@@ -264,11 +264,10 @@ export async function analyzeTemplate(templateName: string): Promise<{ templateN
     throw new Error('analyzeTemplate can only be called from the client side');
   }
 
-  const res = await fetchWithErrorHandling(`${API_BASE}/api/templates/analyze`, {
+  const res = await fetchWithErrorHandling(`/api/templates/analyze`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-ADMIN-TOKEN': config.adminToken,
     },
     body: JSON.stringify({ templateName }),
   });
@@ -287,11 +286,8 @@ export async function analyzeCsv(file: File, templateName?: string): Promise<Csv
     formData.append('templateName', templateName);
   }
 
-  const res = await fetchWithErrorHandling(`${API_BASE}/api/csv/analyze`, {
+  const res = await fetchWithErrorHandling(`/api/csv/analyze`, {
     method: 'POST',
-    headers: {
-      'X-ADMIN-TOKEN': config.adminToken,
-    },
     body: formData,
   });
 
@@ -319,11 +315,7 @@ export async function exportAnalytics(): Promise<void> {
     throw new Error('exportAnalytics can only be called from the client side');
   }
 
-  const res = await fetchWithErrorHandling(`${API_BASE}/api/analytics/export`, {
-    headers: {
-      'X-ADMIN-TOKEN': config.adminToken,
-    },
-  });
+  const res = await fetchWithErrorHandling(`/api/analytics/export`);
 
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
@@ -344,10 +336,13 @@ export async function fetchTemplatesAnalytics(params: { language?: string; orgId
 
   const url = new URL('/analytics/templates', API_BASE);
   if (params.language) url.searchParams.set('language', params.language);
-  const orgId = params.orgId || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: orgId ? { 'X-ORG-ID': orgId } : {},
-  });
+  const orgId = params.orgId || getCurrentOrgId() || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
   return res.json();
 }
 
@@ -358,10 +353,13 @@ export async function fetchAnalyticsSummary(params: { start?: string; end?: stri
 
   const url = new URL('/analytics/summary', API_BASE);
   Object.entries(params).forEach(([k, v]) => { if (v && k !== 'orgId') url.searchParams.set(k, String(v)); });
-  const orgId = params.orgId || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: orgId ? { 'X-ORG-ID': orgId } : {},
-  });
+  const orgId = params.orgId || getCurrentOrgId() || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
   return res.json();
 }
 
@@ -372,10 +370,13 @@ export async function fetchTemplateSeries(name: string, params: { start?: string
 
   const url = new URL(`/analytics/template/${encodeURIComponent(name)}/series`, API_BASE);
   Object.entries(params).forEach(([k, v]) => { if (v && k !== 'orgId') url.searchParams.set(k, String(v)); });
-  const orgId = params.orgId || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: orgId ? { 'X-ORG-ID': orgId } : {},
-  });
+  const orgId = params.orgId || getCurrentOrgId() || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
   return res.json();
 }
 
@@ -386,10 +387,13 @@ export async function fetchTemplateVariables(name: string, params: { start?: str
 
   const url = new URL(`/analytics/template/${encodeURIComponent(name)}/variables`, API_BASE);
   Object.entries(params).forEach(([k, v]) => { if (v && k !== 'orgId') url.searchParams.set(k, String(v)); });
-  const orgId = params.orgId || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: orgId ? { 'X-ORG-ID': orgId } : {},
-  });
+  const orgId = params.orgId || getCurrentOrgId() || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
   return res.json();
 }
 
@@ -400,10 +404,13 @@ export async function fetchTopValues(name: string, variable: string, params: { s
 
   const url = new URL(`/analytics/template/${encodeURIComponent(name)}/variables/${encodeURIComponent(variable)}/top`, API_BASE);
   Object.entries(params).forEach(([k, v]) => { if (v && k !== 'orgId') url.searchParams.set(k, String(v)); });
-  const orgId = params.orgId || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: orgId ? { 'X-ORG-ID': orgId } : {},
-  });
+  const orgId = params.orgId || getCurrentOrgId() || process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
   return res.json();
 }
 
@@ -423,12 +430,16 @@ export async function sendFeedbackCsv(
   if (language) formData.append('language', language);
   if (dryRun !== undefined) formData.append('dryRun', dryRun.toString());
 
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
   const res = await fetchWithErrorHandling(`${API_BASE}/send-feedback-csv`, {
     method: 'POST',
     body: formData,
-    headers: {
-      'X-ADMIN-TOKEN': config.adminToken,
-    },
+    headers,
   });
 
   return res.json();
@@ -472,12 +483,17 @@ export async function sendTemplateDynamic(
       payload.campaignId = campaignId;
     }
 
+    const orgId = getCurrentOrgId();
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
     const res = await fetchWithErrorHandling(`${API_BASE}/api/send-template-dynamic`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-ADMIN-TOKEN': config.adminToken,
-      },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -523,11 +539,13 @@ export async function fetchConversations(params: {
     }
   });
 
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: {
-      'X-ADMIN-TOKEN': config.adminToken,
-    },
-  });
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
 
   const data: ConversationsResponse = await res.json();
 
@@ -569,11 +587,13 @@ export async function fetchConversationMessages(
     }
   });
 
-  const res = await fetchWithErrorHandling(url.toString(), {
-    headers: {
-      'X-ADMIN-TOKEN': config.adminToken,
-    },
-  });
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
 
   return res.json();
 }
@@ -592,12 +612,17 @@ export async function updateConversationMetadata(
     throw new Error('updateConversationMetadata can only be called from the client side');
   }
 
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
   const res = await fetchWithErrorHandling(`${API_BASE}/conversations/${encodeURIComponent(phoneNumber)}/metadata`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-ADMIN-TOKEN': config.adminToken,
-    },
+    headers,
     body: JSON.stringify(metadata),
   });
 
@@ -647,6 +672,25 @@ import type {
   CampaignListResponse,
   CreateCampaignRequest,
   AudiencePreviewResponse,
+  // New campaign config types
+  CampaignConfig,
+  BirthdayConfig,
+  AnniversaryConfig,
+  FirstVisitConfig,
+  WinbackConfig,
+  WinbackTier,
+  FestivalConfig,
+  UtilityConfig,
+  // New analytics types
+  DashboardOverview,
+  CampaignStats,
+  AutoCampaignStats,
+  TemplateStats,
+  TemplatePerformance,
+  SegmentCounts,
+  SegmentFilter,
+  AudiencePreviewResult,
+  // Legacy types (deprecated)
   AutoCampaign,
   CreateAutoCampaignRequest,
   CampaignAnalytics,
@@ -676,18 +720,15 @@ export async function apiClient<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (orgId) {
-    headers['X-ORG-ID'] = orgId;
-  }
-
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Also include admin token for backwards compatibility
-  if (config.adminToken) {
-    headers['X-ADMIN-TOKEN'] = config.adminToken;
+  if (!token && orgId) {
+    headers['X-ORG-ID'] = orgId;
   }
+
+  // Also include admin token for backwards compatibility
 
   const res = await fetchWithErrorHandling(`${API_BASE}${endpoint}`, {
     ...options,
@@ -706,7 +747,7 @@ export async function apiClient<T>(
  */
 export async function fetchCustomers(params: CustomerListParams = {}): Promise<CustomerListResponse> {
   const searchParams = new URLSearchParams();
-  
+
   if (params.page) searchParams.set('page', params.page.toString());
   if (params.limit) searchParams.set('limit', params.limit.toString());
   if (params.search) searchParams.set('search', params.search);
@@ -738,7 +779,7 @@ export async function fetchCustomerTransactions(
   const searchParams = new URLSearchParams();
   if (params.page) searchParams.set('page', params.page.toString());
   if (params.limit) searchParams.set('limit', params.limit.toString());
-  
+
   const queryString = searchParams.toString();
   return apiClient<TransactionListResponse>(
     `/api/pos/customers/${customerId}/transactions${queryString ? `?${queryString}` : ''}`
@@ -761,7 +802,7 @@ export async function fetchSyncStatus(): Promise<SyncStatus> {
  */
 export async function fetchCampaigns(params: CampaignListParams = {}): Promise<CampaignListResponse> {
   const searchParams = new URLSearchParams();
-  
+
   if (params.status) searchParams.set('status', params.status);
   if (params.type) searchParams.set('type', params.type);
   if (params.page) searchParams.set('page', params.page.toString());
@@ -859,10 +900,224 @@ export async function cancelCampaign(campaignId: string): Promise<Campaign> {
 }
 
 // ============================================================================
-// Auto Campaign API Functions
+// Campaign Configuration API Functions (Config-Based Auto Campaigns)
 // ============================================================================
 
 /**
+ * Fetch campaign configuration for the organization
+ */
+export async function fetchCampaignConfig(): Promise<CampaignConfig> {
+  const response = await apiClient<{ success: boolean; data: CampaignConfig }>('/api/campaign-config');
+  return response.data;
+}
+
+/**
+ * Update campaign configuration (partial update)
+ */
+export async function updateCampaignConfig(updates: Partial<CampaignConfig>): Promise<CampaignConfig> {
+  const response = await apiClient<{ success: boolean; data: CampaignConfig }>('/api/campaign-config', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Update birthday campaign configuration
+ */
+export async function updateBirthdayConfig(updates: Partial<BirthdayConfig>): Promise<BirthdayConfig> {
+  const response = await apiClient<{ success: boolean; data: BirthdayConfig }>('/api/campaign-config/birthday', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Update anniversary campaign configuration
+ */
+export async function updateAnniversaryConfig(updates: Partial<AnniversaryConfig>): Promise<AnniversaryConfig> {
+  const response = await apiClient<{ success: boolean; data: AnniversaryConfig }>('/api/campaign-config/anniversary', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Update first visit campaign configuration
+ */
+export async function updateFirstVisitConfig(updates: Partial<FirstVisitConfig>): Promise<FirstVisitConfig> {
+  const response = await apiClient<{ success: boolean; data: FirstVisitConfig }>('/api/campaign-config/first-visit', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Update winback campaign configuration
+ */
+export async function updateWinbackConfig(updates: Partial<WinbackConfig>): Promise<WinbackConfig> {
+  const response = await apiClient<{ success: boolean; data: WinbackConfig }>('/api/campaign-config/winback', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Add a new winback tier
+ */
+export async function addWinbackTier(tier: Omit<WinbackTier, 'enabled'> & { enabled?: boolean }): Promise<WinbackConfig> {
+  const response = await apiClient<{ success: boolean; data: WinbackConfig }>('/api/campaign-config/winback/tiers', {
+    method: 'POST',
+    body: JSON.stringify(tier),
+  });
+  return response.data;
+}
+
+/**
+ * Remove a winback tier by days
+ */
+export async function removeWinbackTier(days: number): Promise<WinbackConfig> {
+  const response = await apiClient<{ success: boolean; data: WinbackConfig }>(`/api/campaign-config/winback/tiers/${days}`, {
+    method: 'DELETE',
+  });
+  return response.data;
+}
+
+/**
+ * Add a new festival campaign
+ */
+export async function addFestival(festival: Omit<FestivalConfig, 'id'>): Promise<FestivalConfig[]> {
+  const response = await apiClient<{ success: boolean; data: FestivalConfig[] }>('/api/campaign-config/festivals', {
+    method: 'POST',
+    body: JSON.stringify(festival),
+  });
+  return response.data;
+}
+
+/**
+ * Update an existing festival campaign
+ */
+export async function updateFestival(id: string, updates: Partial<FestivalConfig>): Promise<FestivalConfig[]> {
+  const response = await apiClient<{ success: boolean; data: FestivalConfig[] }>(`/api/campaign-config/festivals/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Delete a festival campaign
+ */
+export async function deleteFestival(id: string): Promise<FestivalConfig[]> {
+  const response = await apiClient<{ success: boolean; data: FestivalConfig[] }>(`/api/campaign-config/festivals/${id}`, {
+    method: 'DELETE',
+  });
+  return response.data;
+}
+
+/**
+ * Update utility messaging configuration
+ */
+export async function updateUtilityConfig(updates: Partial<UtilityConfig>): Promise<UtilityConfig> {
+  const response = await apiClient<{ success: boolean; data: UtilityConfig }>('/api/campaign-config/utility', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  return response.data;
+}
+
+/**
+ * Preview audience count based on segment filters
+ */
+export async function previewAudienceCount(filter: SegmentFilter): Promise<AudiencePreviewResult> {
+  const response = await apiClient<{ success: boolean; data: AudiencePreviewResult }>('/api/campaign-config/preview', {
+    method: 'POST',
+    body: JSON.stringify(filter),
+  });
+  return response.data;
+}
+
+// ============================================================================
+// New Analytics API Functions
+// ============================================================================
+
+/**
+ * Fetch dashboard overview analytics
+ */
+export async function fetchDashboardOverview(): Promise<DashboardOverview> {
+  const response = await apiClient<{ success: boolean; data: DashboardOverview }>('/api/analytics/overview');
+  return response.data;
+}
+
+/**
+ * Fetch campaign stats by type
+ */
+export async function fetchCampaignStatsByType(params?: { type?: string; days?: number }): Promise<Record<string, CampaignStats>> {
+  const searchParams = new URLSearchParams();
+  if (params?.type) searchParams.set('type', params.type);
+  if (params?.days) searchParams.set('days', params.days.toString());
+
+  const queryString = searchParams.toString();
+  const response = await apiClient<{ success: boolean; data: Record<string, CampaignStats> }>(
+    `/api/analytics/campaigns${queryString ? `?${queryString}` : ''}`
+  );
+  return response.data;
+}
+
+/**
+ * Fetch auto-campaign stats summary
+ */
+export async function fetchAutoCampaignStats(): Promise<AutoCampaignStats> {
+  const response = await apiClient<{ success: boolean; data: AutoCampaignStats }>('/api/analytics/auto-campaigns');
+  return response.data;
+}
+
+/**
+ * Fetch template stats
+ */
+export async function fetchTemplateStatsNew(days?: number): Promise<TemplateStats[]> {
+  const searchParams = new URLSearchParams();
+  if (days) searchParams.set('days', days.toString());
+
+  const queryString = searchParams.toString();
+  const response = await apiClient<{ success: boolean; data: TemplateStats[] }>(
+    `/api/analytics/templates${queryString ? `?${queryString}` : ''}`
+  );
+  return response.data;
+}
+
+/**
+ * Fetch single template performance with timeseries
+ */
+export async function fetchTemplatePerformance(templateName: string, days?: number): Promise<TemplatePerformance> {
+  const searchParams = new URLSearchParams();
+  if (days) searchParams.set('days', days.toString());
+
+  const queryString = searchParams.toString();
+  const response = await apiClient<{ success: boolean; data: TemplatePerformance }>(
+    `/api/analytics/templates/${encodeURIComponent(templateName)}${queryString ? `?${queryString}` : ''}`
+  );
+  return response.data;
+}
+
+/**
+ * Fetch customer segment counts
+ */
+export async function fetchSegmentCounts(): Promise<SegmentCounts> {
+  const response = await apiClient<{ success: boolean; data: SegmentCounts }>('/api/analytics/segments');
+  return response.data;
+}
+
+// ============================================================================
+// Legacy Auto Campaign API Functions (Deprecated - Use Campaign Config instead)
+// ============================================================================
+
+/**
+ * @deprecated Use fetchCampaignConfig() instead
  * Fetch list of auto campaigns
  */
 export async function fetchAutoCampaigns(): Promise<{ autoCampaigns: AutoCampaign[] }> {
@@ -870,6 +1125,7 @@ export async function fetchAutoCampaigns(): Promise<{ autoCampaigns: AutoCampaig
 }
 
 /**
+ * @deprecated Use fetchCampaignConfig() instead
  * Fetch single auto campaign
  */
 export async function fetchAutoCampaign(id: string): Promise<AutoCampaign> {
@@ -877,6 +1133,7 @@ export async function fetchAutoCampaign(id: string): Promise<AutoCampaign> {
 }
 
 /**
+ * @deprecated Use updateBirthdayConfig/updateWinbackConfig etc instead
  * Create an auto campaign
  */
 export async function createAutoCampaign(data: CreateAutoCampaignRequest): Promise<AutoCampaign> {
@@ -887,6 +1144,7 @@ export async function createAutoCampaign(data: CreateAutoCampaignRequest): Promi
 }
 
 /**
+ * @deprecated Use updateBirthdayConfig/updateWinbackConfig etc instead
  * Update an auto campaign
  */
 export async function updateAutoCampaign(id: string, data: Partial<CreateAutoCampaignRequest>): Promise<AutoCampaign> {
@@ -897,6 +1155,7 @@ export async function updateAutoCampaign(id: string, data: Partial<CreateAutoCam
 }
 
 /**
+ * @deprecated Use updateBirthdayConfig with enabled: false instead
  * Delete an auto campaign
  */
 export async function deleteAutoCampaign(id: string): Promise<void> {
@@ -906,6 +1165,7 @@ export async function deleteAutoCampaign(id: string): Promise<void> {
 }
 
 /**
+ * @deprecated Use updateBirthdayConfig with enabled: true instead
  * Activate an auto campaign
  */
 export async function activateAutoCampaign(id: string): Promise<AutoCampaign> {
@@ -915,6 +1175,7 @@ export async function activateAutoCampaign(id: string): Promise<AutoCampaign> {
 }
 
 /**
+ * @deprecated Use updateBirthdayConfig with enabled: false instead
  * Pause an auto campaign
  */
 export async function pauseAutoCampaign(id: string): Promise<AutoCampaign> {
@@ -949,10 +1210,11 @@ export async function updateServiceConfig(orgId: string, update: ServiceUpdate):
 }
 
 // ============================================================================
-// Campaign & Customer Analytics API Functions
+// Legacy Campaign & Customer Analytics API Functions (Deprecated)
 // ============================================================================
 
 /**
+ * @deprecated Use fetchDashboardOverview() or fetchCampaignStatsByType() instead
  * Fetch campaign analytics
  */
 export async function fetchCampaignAnalytics(): Promise<CampaignAnalytics> {
@@ -960,6 +1222,7 @@ export async function fetchCampaignAnalytics(): Promise<CampaignAnalytics> {
 }
 
 /**
+ * @deprecated Use fetchSegmentCounts() instead
  * Fetch customer analytics
  */
 export async function fetchCustomerAnalytics(): Promise<CustomerAnalytics> {

@@ -82,8 +82,7 @@ export default function TemplatesPage() {
       
       // Clear backend cache
       await fetch('/api/templates/cache/clear', { 
-        method: 'POST',
-        headers: { 'X-ADMIN-TOKEN': process.env.NEXT_PUBLIC_ADMIN_TOKEN || '' }
+        method: 'POST'
       });
       
       // Reload templates

@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Breadcrumb } from "@/components/breadcrumb";
 import {
   BellRing,
@@ -25,74 +27,103 @@ import {
   HeartHandshake,
   Star,
   Plus,
-  Play,
-  Pause,
   Trash2,
   Loader2,
   Clock,
   Calendar,
   RefreshCcw,
+  MessageSquare,
+  Send,
+  CheckCircle,
+  PartyPopper,
+  Receipt,
+  ThumbsUp,
+  ExternalLink,
+  Edit,
+  Save,
+  X,
 } from "lucide-react";
 import {
-  fetchAutoCampaigns,
-  createAutoCampaign,
-  activateAutoCampaign,
-  pauseAutoCampaign,
-  deleteAutoCampaign,
-  fetchTemplates,
-  type Template,
+  fetchCampaignConfig,
+  updateBirthdayConfig,
+  updateAnniversaryConfig,
+  updateFirstVisitConfig,
+  updateWinbackConfig,
+  addWinbackTier,
+  removeWinbackTier,
+  addFestival,
+  updateFestival,
+  deleteFestival,
+  updateUtilityConfig,
+  fetchAutoCampaignStats,
 } from "@/lib/api";
-import type { AutoCampaign, CreateAutoCampaignRequest } from "@/lib/types/campaign";
+import type {
+  CampaignConfig,
+  BirthdayConfig,
+  AnniversaryConfig,
+  FirstVisitConfig,
+  WinbackConfig,
+  WinbackTier,
+  FestivalConfig,
+  UtilityConfig,
+  AutoCampaignStats,
+  CampaignStats,
+} from "@/lib/types/campaign";
 import { handleApiError } from "@/lib/error-handler";
 
-const triggerTypeInfo = {
-  birthday: {
-    title: "Birthday Campaign",
-    description: "Send wishes and offers to customers on their birthday",
-    icon: Gift,
-    tone: "bg-[#edf3ff]",
-  },
-  anniversary: {
-    title: "Anniversary Campaign",
-    description: "Celebrate customer anniversaries with special messages",
-    icon: Star,
-    tone: "bg-[#f2f7ff]",
-  },
-  winback: {
-    title: "Win-back Campaign",
-    description: "Re-engage customers who haven't visited in a while",
-    icon: HeartHandshake,
-    tone: "bg-[#fdeef8]",
-  },
-  first_visit_followup: {
-    title: "First Visit Follow-up",
-    description: "Welcome new customers after their first visit",
-    icon: Users,
-    tone: "bg-[#ecfdf5]",
-  },
-};
+// Helper to format days offset for display
+function formatDaysOffset(days: number): string {
+  if (days < 0) return `${Math.abs(days)} days before`;
+  if (days > 0) return `${days} days after`;
+  return "On the day";
+}
+
+// Stats Card Component
+function StatsCard({ label, value, subtext }: { label: string; value: string | number; subtext?: string }) {
+  return (
+    <div className="text-center bg-white/60 rounded-lg p-3">
+      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <p className="text-xs text-gray-500">{label}</p>
+      {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
+    </div>
+  );
+}
+
+// Campaign Stats Display
+function CampaignStatsDisplay({ stats }: { stats: CampaignStats }) {
+  return (
+    <div className="grid grid-cols-4 gap-2 mt-4 pt-4 border-t border-gray-200">
+      <StatsCard label="Sent" value={stats.sent.toLocaleString()} />
+      <StatsCard label="Delivered" value={stats.delivered.toLocaleString()} />
+      <StatsCard label="Read" value={stats.read.toLocaleString()} />
+      <StatsCard 
+        label="Read Rate" 
+        value={`${stats.readRate.toFixed(1)}%`} 
+      />
+    </div>
+  );
+}
 
 export default function AutoCampaignsPage() {
-  const [autoCampaigns, setAutoCampaigns] = useState<AutoCampaign[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
+  const [config, setConfig] = useState<CampaignConfig | null>(null);
+  const [stats, setStats] = useState<AutoCampaignStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
 
-  // Create dialog
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [selectedTriggerType, setSelectedTriggerType] = useState<string | null>(null);
-
-  // Form state
-  const [formData, setFormData] = useState<CreateAutoCampaignRequest>({
+  // Festival dialog state
+  const [showFestivalDialog, setShowFestivalDialog] = useState(false);
+  const [editingFestival, setEditingFestival] = useState<FestivalConfig | null>(null);
+  const [festivalForm, setFestivalForm] = useState({
     name: "",
-    triggerType: "birthday",
-    triggerConfig: {
-      runTime: "10:00",
-      cooldownDays: 365,
-    },
-    template: { name: "", language: "en" },
+    date: "",
+    daysOffset: 3,
+    enabled: true,
+    templateId: "",
   });
+
+  // Add tier dialog state
+  const [showTierDialog, setShowTierDialog] = useState(false);
+  const [newTierDays, setNewTierDays] = useState(45);
 
   useEffect(() => {
     loadData();
@@ -101,129 +132,313 @@ export default function AutoCampaignsPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [campaignsData, templatesData] = await Promise.all([
-        fetchAutoCampaigns(),
-        fetchTemplates(),
+      const [configData, statsData] = await Promise.allSettled([
+        fetchCampaignConfig(),
+        fetchAutoCampaignStats(),
       ]);
-      setAutoCampaigns(campaignsData.autoCampaigns);
-      setTemplates(templatesData.data.filter(t => t.status === "APPROVED"));
+
+      if (configData.status === "fulfilled") {
+        setConfig(configData.value);
+      } else {
+        console.error("Failed to load config:", configData.reason);
+        // Set default config for development/demo
+        setConfig(getDefaultConfig());
+      }
+
+      if (statsData.status === "fulfilled") {
+        setStats(statsData.value);
+      }
     } catch (error) {
-      console.error("Failed to load auto campaigns:", error);
+      console.error("Failed to load data:", error);
     } finally {
       setLoading(false);
     }
   }
 
-  function openCreateDialog(triggerType: string) {
-    setSelectedTriggerType(triggerType);
-    setFormData({
-      name: `${triggerTypeInfo[triggerType as keyof typeof triggerTypeInfo]?.title || triggerType}`,
-      triggerType: triggerType as CreateAutoCampaignRequest["triggerType"],
-      triggerConfig: {
-        runTime: "10:00",
-        cooldownDays: triggerType === "birthday" || triggerType === "anniversary" ? 365 : 30,
-        ...(triggerType === "birthday" || triggerType === "anniversary"
-          ? { dateOffset: { days: 0, reference: "on" as const } }
-          : {}),
-        ...(triggerType === "winback"
-          ? { inactivity: { thresholdDays: 60 } }
-          : {}),
+  function getDefaultConfig(): CampaignConfig {
+    return {
+      orgId: "",
+      birthday: { enabled: false, daysOffset: 0, sendTime: "10:00", minVisits: 1, templateId: "" },
+      anniversary: { enabled: false, daysOffset: 0, sendTime: "10:00", minVisits: 1, templateId: "" },
+      firstVisit: { enabled: false, daysAfter: 1, sendTime: "10:00", templateId: "" },
+      winback: { enabled: false, tiers: [], cooldownDays: 30, minVisits: 2 },
+      festivals: [],
+      utility: {
+        billMessaging: { enabled: false, autoSend: false, templateId: "" },
+        feedback: { enabled: false, delayMinutes: 60, templateId: "" },
+        reviewRequest: { enabled: false, daysAfterVisit: 1, reviewLink: "", templateId: "" },
       },
-      template: { name: "", language: "en" },
-    });
-    setShowCreateDialog(true);
+      defaultSendTime: "10:00",
+      timezone: "Asia/Kolkata",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
-  async function handleCreate() {
-    if (!formData.name || !formData.template.name) {
-      alert("Please fill in all required fields");
+  // Birthday Config Handlers
+  async function handleBirthdayToggle(enabled: boolean) {
+    if (!config) return;
+    setSaving("birthday");
+    try {
+      const updated = await updateBirthdayConfig({ enabled });
+      setConfig({ ...config, birthday: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleBirthdayUpdate(updates: Partial<BirthdayConfig>) {
+    if (!config) return;
+    setSaving("birthday");
+    try {
+      const updated = await updateBirthdayConfig(updates);
+      setConfig({ ...config, birthday: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Anniversary Config Handlers
+  async function handleAnniversaryToggle(enabled: boolean) {
+    if (!config) return;
+    setSaving("anniversary");
+    try {
+      const updated = await updateAnniversaryConfig({ enabled });
+      setConfig({ ...config, anniversary: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleAnniversaryUpdate(updates: Partial<AnniversaryConfig>) {
+    if (!config) return;
+    setSaving("anniversary");
+    try {
+      const updated = await updateAnniversaryConfig(updates);
+      setConfig({ ...config, anniversary: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // First Visit Config Handlers
+  async function handleFirstVisitToggle(enabled: boolean) {
+    if (!config) return;
+    setSaving("firstVisit");
+    try {
+      const updated = await updateFirstVisitConfig({ enabled });
+      setConfig({ ...config, firstVisit: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleFirstVisitUpdate(updates: Partial<FirstVisitConfig>) {
+    if (!config) return;
+    setSaving("firstVisit");
+    try {
+      const updated = await updateFirstVisitConfig(updates);
+      setConfig({ ...config, firstVisit: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Winback Config Handlers
+  async function handleWinbackToggle(enabled: boolean) {
+    if (!config) return;
+    setSaving("winback");
+    try {
+      const updated = await updateWinbackConfig({ enabled });
+      setConfig({ ...config, winback: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleWinbackUpdate(updates: Partial<WinbackConfig>) {
+    if (!config) return;
+    setSaving("winback");
+    try {
+      const updated = await updateWinbackConfig(updates);
+      setConfig({ ...config, winback: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleAddTier() {
+    if (!config) return;
+    setSaving("winback-tier");
+    try {
+      const updated = await addWinbackTier({ days: newTierDays, templateId: "", enabled: true });
+      setConfig({ ...config, winback: updated });
+      setShowTierDialog(false);
+      setNewTierDays(45);
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleRemoveTier(days: number) {
+    if (!config) return;
+    if (!confirm(`Remove the ${days}-day tier?`)) return;
+    setSaving("winback-tier");
+    try {
+      const updated = await removeWinbackTier(days);
+      setConfig({ ...config, winback: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleTierToggle(days: number, enabled: boolean) {
+    if (!config) return;
+    setSaving("winback-tier");
+    try {
+      const updatedTiers = config.winback.tiers.map(t =>
+        t.days === days ? { ...t, enabled } : t
+      );
+      const updated = await updateWinbackConfig({ tiers: updatedTiers });
+      setConfig({ ...config, winback: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Festival Handlers
+  function openFestivalDialog(festival?: FestivalConfig) {
+    if (festival) {
+      setEditingFestival(festival);
+      setFestivalForm({
+        name: festival.name,
+        date: festival.date,
+        daysOffset: festival.daysOffset,
+        enabled: festival.enabled,
+        templateId: festival.templateId,
+      });
+    } else {
+      setEditingFestival(null);
+      setFestivalForm({
+        name: "",
+        date: "",
+        daysOffset: 3,
+        enabled: true,
+        templateId: "",
+      });
+    }
+    setShowFestivalDialog(true);
+  }
+
+  async function handleSaveFestival() {
+    if (!config || !festivalForm.name || !festivalForm.date) {
+      alert("Please fill in festival name and date");
       return;
     }
-
-    setCreating(true);
+    setSaving("festival");
     try {
-      await createAutoCampaign(formData);
-      setShowCreateDialog(false);
-      loadData();
-    } catch (error) {
-      alert(handleApiError(error));
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function handleActivate(id: string) {
-    setActionLoading(id);
-    try {
-      await activateAutoCampaign(id);
-      loadData();
-    } catch (error) {
-      alert(handleApiError(error));
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function handlePause(id: string) {
-    setActionLoading(id);
-    try {
-      await pauseAutoCampaign(id);
-      loadData();
-    } catch (error) {
-      alert(handleApiError(error));
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this auto-campaign?")) return;
-
-    setActionLoading(id);
-    try {
-      await deleteAutoCampaign(id);
-      loadData();
-    } catch (error) {
-      alert(handleApiError(error));
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  function getTriggerDescription(campaign: AutoCampaign) {
-    switch (campaign.triggerType) {
-      case "birthday":
-      case "anniversary": {
-        const offset = campaign.triggerConfig.dateOffset;
-        if (offset?.reference === "before") {
-          return `${offset.days} days before`;
-        } else if (offset?.reference === "after") {
-          return `${offset.days} days after`;
-        }
-        return `On ${campaign.triggerType}`;
+      let updatedFestivals: FestivalConfig[];
+      if (editingFestival) {
+        updatedFestivals = await updateFestival(editingFestival.id, festivalForm);
+      } else {
+        updatedFestivals = await addFestival(festivalForm);
       }
-      case "winback":
-        return `After ${campaign.triggerConfig.inactivity?.thresholdDays || 60} days of inactivity`;
-      case "first_visit_followup":
-        return `${campaign.triggerConfig.postVisit?.daysAfter || 1} day(s) after first visit`;
-      default:
-        return campaign.triggerType;
+      setConfig({ ...config, festivals: updatedFestivals });
+      setShowFestivalDialog(false);
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
     }
   }
 
-  // Group campaigns by trigger type
-  const campaignsByType = autoCampaigns.reduce((acc, campaign) => {
-    const type = campaign.triggerType;
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(campaign);
-    return acc;
-  }, {} as Record<string, AutoCampaign[]>);
+  async function handleDeleteFestival(id: string) {
+    if (!config) return;
+    if (!confirm("Delete this festival?")) return;
+    setSaving("festival");
+    try {
+      const updatedFestivals = await deleteFestival(id);
+      setConfig({ ...config, festivals: updatedFestivals });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
 
-  // Available templates (not yet configured)
-  const configuredTypes = new Set(autoCampaigns.map(c => c.triggerType));
-  const availableTemplates = Object.entries(triggerTypeInfo).filter(
-    ([type]) => !configuredTypes.has(type as AutoCampaign["triggerType"])
-  );
+  async function handleFestivalToggle(id: string, enabled: boolean) {
+    if (!config) return;
+    setSaving("festival");
+    try {
+      const updatedFestivals = await updateFestival(id, { enabled });
+      setConfig({ ...config, festivals: updatedFestivals });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Utility Config Handlers
+  async function handleUtilityUpdate(updates: Partial<UtilityConfig>) {
+    if (!config) return;
+    setSaving("utility");
+    try {
+      const updated = await updateUtilityConfig(updates);
+      setConfig({ ...config, utility: updated });
+    } catch (error) {
+      alert(handleApiError(error));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Count active campaigns
+  const activeCampaignsCount = config
+    ? [
+        config.birthday.enabled,
+        config.anniversary.enabled,
+        config.firstVisit.enabled,
+        config.winback.enabled,
+        ...config.festivals.map(f => f.enabled),
+        config.utility.billMessaging.enabled,
+        config.utility.feedback.enabled,
+        config.utility.reviewRequest.enabled,
+      ].filter(Boolean).length
+    : 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-[var(--connectnow-accent-strong)]" />
+          <p className="text-gray-600">Loading campaign settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -233,14 +448,14 @@ export default function AutoCampaignsPage() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-4 max-w-2xl">
               <Badge className="w-fit bg-white/80 text-[var(--connectnow-accent-strong)]">
-                Auto Campaigns • ConnectNow
+                Campaign Settings • ConnectNow
               </Badge>
               <h1 className="text-4xl font-semibold leading-tight">
                 Automate your customer engagement 🔔
               </h1>
               <p className="text-lg text-gray-700">
-                Set up automated campaigns that trigger based on customer events like birthdays,
-                anniversaries, or inactivity. Reach the right customers at the right time.
+                Configure automated campaigns that trigger based on customer events like birthdays,
+                anniversaries, festivals, or inactivity. Reach the right customers at the right time.
               </p>
               <div className="flex flex-wrap gap-3 text-sm font-medium text-gray-700">
                 <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-4 py-2">
@@ -254,14 +469,12 @@ export default function AutoCampaignsPage() {
               </div>
             </div>
             <div className="rounded-2xl bg-white/80 p-6 shadow-inner space-y-4">
-              <h3 className="text-sm font-semibold text-gray-600">
-                Active Auto-Campaigns
-              </h3>
+              <h3 className="text-sm font-semibold text-gray-600">Active Campaigns</h3>
               <p className="text-4xl font-bold text-[var(--connectnow-accent-strong)]">
-                {autoCampaigns.filter(c => c.status === "active").length}
+                {activeCampaignsCount}
               </p>
               <p className="text-sm text-gray-600">
-                of {autoCampaigns.length} total campaigns
+                campaigns running automatically
               </p>
             </div>
           </div>
@@ -270,384 +483,714 @@ export default function AutoCampaignsPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Breadcrumb items={[{ label: "Auto Campaigns" }]} />
+        <Breadcrumb items={[{ label: "Campaign Settings" }]} />
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <p className="text-sm text-gray-500">
+              Timezone: {config?.timezone || "Asia/Kolkata"} • Default send time: {config?.defaultSendTime || "10:00"}
+            </p>
           </div>
-        ) : (
-          <>
-            {/* Active Auto-Campaigns */}
-            {autoCampaigns.length > 0 && (
-              <section className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">Your Auto-Campaigns</h2>
-                  <Button variant="outline" size="sm" onClick={loadData}>
-                    <RefreshCcw className="h-4 w-4 mr-2" />
-                    Refresh
+          <Button variant="outline" size="sm" onClick={loadData}>
+            <RefreshCcw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
+
+        <Tabs defaultValue="automated" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
+            <TabsTrigger value="automated" className="gap-2">
+              <BellRing className="h-4 w-4" />
+              Automated
+            </TabsTrigger>
+            <TabsTrigger value="festivals" className="gap-2">
+              <PartyPopper className="h-4 w-4" />
+              Festivals
+            </TabsTrigger>
+            <TabsTrigger value="utility" className="gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Utility
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Automated Campaigns Tab */}
+          <TabsContent value="automated" className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              {/* Birthday Campaign */}
+              <Card className="bg-[#edf3ff] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <Gift className="h-5 w-5 text-pink-500" />
+                      </div>
+                      <div>
+                        <CardTitle>Birthday Campaign</CardTitle>
+                        <CardDescription>Send wishes on customer birthdays</CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {saving === "birthday" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <Switch
+                        checked={config?.birthday.enabled || false}
+                        onCheckedChange={handleBirthdayToggle}
+                        disabled={saving === "birthday"}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                {config?.birthday.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">When to Send</Label>
+                        <Select
+                          value={config.birthday.daysOffset.toString()}
+                          onValueChange={(v) => handleBirthdayUpdate({ daysOffset: parseInt(v) })}
+                        >
+                          <SelectTrigger className="bg-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="-7">7 days before</SelectItem>
+                            <SelectItem value="-3">3 days before</SelectItem>
+                            <SelectItem value="-1">1 day before</SelectItem>
+                            <SelectItem value="0">On birthday</SelectItem>
+                            <SelectItem value="1">1 day after</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">Send Time</Label>
+                        <Input
+                          type="time"
+                          value={config.birthday.sendTime}
+                          onChange={(e) => handleBirthdayUpdate({ sendTime: e.target.value })}
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Minimum Visits Required</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={config.birthday.minVisits}
+                        onChange={(e) => handleBirthdayUpdate({ minVisits: parseInt(e.target.value) || 0 })}
+                        className="bg-white w-24"
+                      />
+                    </div>
+                    {config.birthday.templateId && (
+                      <p className="text-xs text-gray-500">
+                        Template: <span className="font-medium">{config.birthday.templateId}</span>
+                      </p>
+                    )}
+                    {stats?.birthday && <CampaignStatsDisplay stats={stats.birthday} />}
+                  </CardContent>
+                )}
+              </Card>
+
+              {/* Anniversary Campaign */}
+              <Card className="bg-[#f2f7ff] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <Star className="h-5 w-5 text-yellow-500" />
+                      </div>
+                      <div>
+                        <CardTitle>Anniversary Campaign</CardTitle>
+                        <CardDescription>Celebrate customer anniversaries</CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {saving === "anniversary" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <Switch
+                        checked={config?.anniversary.enabled || false}
+                        onCheckedChange={handleAnniversaryToggle}
+                        disabled={saving === "anniversary"}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                {config?.anniversary.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">When to Send</Label>
+                        <Select
+                          value={config.anniversary.daysOffset.toString()}
+                          onValueChange={(v) => handleAnniversaryUpdate({ daysOffset: parseInt(v) })}
+                        >
+                          <SelectTrigger className="bg-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="-7">7 days before</SelectItem>
+                            <SelectItem value="-3">3 days before</SelectItem>
+                            <SelectItem value="-1">1 day before</SelectItem>
+                            <SelectItem value="0">On anniversary</SelectItem>
+                            <SelectItem value="1">1 day after</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">Send Time</Label>
+                        <Input
+                          type="time"
+                          value={config.anniversary.sendTime}
+                          onChange={(e) => handleAnniversaryUpdate({ sendTime: e.target.value })}
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Minimum Visits Required</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={config.anniversary.minVisits}
+                        onChange={(e) => handleAnniversaryUpdate({ minVisits: parseInt(e.target.value) || 0 })}
+                        className="bg-white w-24"
+                      />
+                    </div>
+                    {stats?.anniversary && <CampaignStatsDisplay stats={stats.anniversary} />}
+                  </CardContent>
+                )}
+              </Card>
+
+              {/* First Visit Follow-up */}
+              <Card className="bg-[#ecfdf5] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <Users className="h-5 w-5 text-green-500" />
+                      </div>
+                      <div>
+                        <CardTitle>First Visit Follow-up</CardTitle>
+                        <CardDescription>Welcome new customers after their first visit</CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {saving === "firstVisit" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <Switch
+                        checked={config?.firstVisit.enabled || false}
+                        onCheckedChange={handleFirstVisitToggle}
+                        disabled={saving === "firstVisit"}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                {config?.firstVisit.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">Days After First Visit</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={config.firstVisit.daysAfter}
+                          onChange={(e) => handleFirstVisitUpdate({ daysAfter: parseInt(e.target.value) || 1 })}
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">Send Time</Label>
+                        <Input
+                          type="time"
+                          value={config.firstVisit.sendTime}
+                          onChange={(e) => handleFirstVisitUpdate({ sendTime: e.target.value })}
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                    {stats?.firstVisit && <CampaignStatsDisplay stats={stats.firstVisit} />}
+                  </CardContent>
+                )}
+              </Card>
+
+              {/* Win-back Campaign */}
+              <Card className="bg-[#fdeef8] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <HeartHandshake className="h-5 w-5 text-purple-500" />
+                      </div>
+                      <div>
+                        <CardTitle>Win-back Campaign</CardTitle>
+                        <CardDescription>Re-engage inactive customers</CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {saving === "winback" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <Switch
+                        checked={config?.winback.enabled || false}
+                        onCheckedChange={handleWinbackToggle}
+                        disabled={saving === "winback"}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                {config?.winback.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">Cooldown (days between messages)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={config.winback.cooldownDays}
+                          onChange={(e) => handleWinbackUpdate({ cooldownDays: parseInt(e.target.value) || 30 })}
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-gray-500">Min Visits Required</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={config.winback.minVisits}
+                          onChange={(e) => handleWinbackUpdate({ minVisits: parseInt(e.target.value) || 2 })}
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Tier Management */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-gray-500">Inactivity Tiers</Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowTierDialog(true)}
+                          className="h-7 text-xs"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add Tier
+                        </Button>
+                      </div>
+                      {config.winback.tiers.length > 0 ? (
+                        <div className="bg-white rounded-lg overflow-hidden">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Days</TableHead>
+                                <TableHead className="text-xs">Status</TableHead>
+                                <TableHead className="text-xs w-20"></TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {config.winback.tiers.sort((a, b) => a.days - b.days).map((tier) => (
+                                <TableRow key={tier.days}>
+                                  <TableCell className="text-sm font-medium">{tier.days} days</TableCell>
+                                  <TableCell>
+                                    <Switch
+                                      checked={tier.enabled}
+                                      onCheckedChange={(checked) => handleTierToggle(tier.days, checked)}
+                                      disabled={saving === "winback-tier"}
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRemoveTier(tier.days)}
+                                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 text-center py-4 bg-white/50 rounded-lg">
+                          No tiers configured. Add a tier to get started.
+                        </p>
+                      )}
+                    </div>
+                    {stats?.winback && <CampaignStatsDisplay stats={stats.winback} />}
+                  </CardContent>
+                )}
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Festivals Tab */}
+          <TabsContent value="festivals" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Festival Campaigns</CardTitle>
+                    <CardDescription>
+                      Send greetings and offers during festivals and special occasions
+                    </CardDescription>
+                  </div>
+                  <Button onClick={() => openFestivalDialog()} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Add Festival
                   </Button>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {autoCampaigns.map((campaign) => {
-                    const typeInfo = triggerTypeInfo[campaign.triggerType as keyof typeof triggerTypeInfo];
-                    const Icon = typeInfo?.icon || Gift;
-
-                    return (
-                      <Card key={campaign._id} className={`${typeInfo?.tone || "bg-gray-50"} border-none`}>
-                        <CardHeader>
+              </CardHeader>
+              <CardContent>
+                {config?.festivals && config.festivals.length > 0 ? (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {config.festivals.map((festival) => (
+                      <Card key={festival.id} className={`${festival.enabled ? "bg-amber-50" : "bg-gray-50"} border-none`}>
+                        <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <Icon className="h-5 w-5 text-[var(--connectnow-accent-strong)]" />
-                              <CardTitle className="text-lg">{campaign.name}</CardTitle>
+                              <PartyPopper className={`h-4 w-4 ${festival.enabled ? "text-amber-500" : "text-gray-400"}`} />
+                              <CardTitle className="text-base">{festival.name}</CardTitle>
                             </div>
-                            <Badge
-                              variant={campaign.status === "active" ? "default" : "secondary"}
-                              className={campaign.status === "active" ? "bg-green-100 text-green-700" : ""}
-                            >
-                              {campaign.status}
-                            </Badge>
+                            <Switch
+                              checked={festival.enabled}
+                              onCheckedChange={(checked) => handleFestivalToggle(festival.id, checked)}
+                              disabled={saving === "festival"}
+                            />
                           </div>
-                          <CardDescription>{getTriggerDescription(campaign)}</CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="flex items-center gap-4 text-sm text-gray-600">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-4 w-4" />
-                              Runs at {campaign.triggerConfig.runTime || "10:00"} daily
-                            </span>
+                        <CardContent className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Calendar className="h-4 w-4" />
+                            <span>{festival.date} ({formatDaysOffset(-festival.daysOffset)} to send)</span>
                           </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span>Template: <strong>{campaign.template.name}</strong></span>
-                          </div>
-                          {campaign.metrics.lastRunAt && (
-                            <div className="pt-2 border-t border-white/50 text-sm text-gray-600">
-                              Last run: {new Date(campaign.metrics.lastRunAt).toLocaleDateString()} 
-                              ({campaign.metrics.lastRunCount} sent)
-                            </div>
+                          {festival.templateId && (
+                            <p className="text-xs text-gray-500">
+                              Template: {festival.templateId}
+                            </p>
                           )}
-                          <div className="grid grid-cols-3 gap-2 pt-2">
-                            <div className="text-center bg-white/60 rounded p-2">
-                              <p className="text-lg font-bold">{campaign.metrics.totalSent}</p>
-                              <p className="text-xs text-gray-500">Sent</p>
-                            </div>
-                            <div className="text-center bg-white/60 rounded p-2">
-                              <p className="text-lg font-bold">{campaign.metrics.totalDelivered}</p>
-                              <p className="text-xs text-gray-500">Delivered</p>
-                            </div>
-                            <div className="text-center bg-white/60 rounded p-2">
-                              <p className="text-lg font-bold">{campaign.metrics.totalRead}</p>
-                              <p className="text-xs text-gray-500">Read</p>
-                            </div>
-                          </div>
                         </CardContent>
-                        <CardFooter className="flex gap-2">
-                          {campaign.status === "active" ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handlePause(campaign._id)}
-                              disabled={actionLoading === campaign._id}
-                            >
-                              {actionLoading === campaign._id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <>
-                                  <Pause className="h-4 w-4 mr-1" />
-                                  Pause
-                                </>
-                              )}
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              onClick={() => handleActivate(campaign._id)}
-                              disabled={actionLoading === campaign._id}
-                            >
-                              {actionLoading === campaign._id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <>
-                                  <Play className="h-4 w-4 mr-1" />
-                                  Activate
-                                </>
-                              )}
-                            </Button>
-                          )}
+                        <CardFooter className="gap-2 pt-0">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => handleDelete(campaign._id)}
-                            disabled={actionLoading === campaign._id}
+                            onClick={() => openFestivalDialog(festival)}
+                            className="flex-1"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Edit className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteFestival(festival.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </CardFooter>
                       </Card>
-                    );
-                  })}
-                </div>
-              </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <PartyPopper className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No festivals configured</h3>
+                    <p className="text-gray-500 mb-4">
+                      Add festivals like Diwali, Christmas, or New Year to send automated greetings
+                    </p>
+                    <Button onClick={() => openFestivalDialog()} className="gap-2">
+                      <Plus className="h-4 w-4" />
+                      Add Your First Festival
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            {stats?.festival && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Festival Campaign Stats</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CampaignStatsDisplay stats={stats.festival} />
+                </CardContent>
+              </Card>
             )}
+          </TabsContent>
 
-            {/* Available Campaign Types */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4">
-                {autoCampaigns.length > 0 ? "Add More Auto-Campaigns" : "Get Started"}
-              </h2>
-              <p className="text-gray-600 mb-4">
-                Choose a campaign type to set up automated messaging for your customers.
-              </p>
-              <div className="grid gap-5 md:grid-cols-2">
-                {Object.entries(triggerTypeInfo).map(([type, info]) => {
-                  const existing = campaignsByType[type];
-                  const Icon = info.icon;
+          {/* Utility Messaging Tab */}
+          <TabsContent value="utility" className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-3">
+              {/* Bill Messaging */}
+              <Card className="bg-[#f0f9ff] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <Receipt className="h-5 w-5 text-blue-500" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Bill Messaging</CardTitle>
+                        <CardDescription>Send digital bills via WhatsApp</CardDescription>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={config?.utility.billMessaging.enabled || false}
+                      onCheckedChange={(checked) =>
+                        handleUtilityUpdate({
+                          billMessaging: { ...config!.utility.billMessaging, enabled: checked },
+                        })
+                      }
+                      disabled={saving === "utility"}
+                    />
+                  </div>
+                </CardHeader>
+                {config?.utility.billMessaging.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-sm">Auto-send after transaction</Label>
+                        <p className="text-xs text-gray-500">Automatically send bills</p>
+                      </div>
+                      <Switch
+                        checked={config.utility.billMessaging.autoSend}
+                        onCheckedChange={(checked) =>
+                          handleUtilityUpdate({
+                            billMessaging: { ...config.utility.billMessaging, autoSend: checked },
+                          })
+                        }
+                        disabled={saving === "utility"}
+                      />
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
 
-                  return (
-                    <Card
-                      key={type}
-                      className={`${info.tone} border-none shadow-sm hover:shadow-md transition-shadow cursor-pointer`}
-                      onClick={() => openCreateDialog(type)}
-                    >
-                      <CardHeader className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Icon className="h-5 w-5 text-[var(--connectnow-accent-strong)]" />
-                            <Badge variant="secondary" className="bg-white/80">
-                              {existing?.length ? `${existing.length} configured` : "Not configured"}
-                            </Badge>
-                          </div>
-                          <Plus className="h-5 w-5 text-gray-400" />
-                        </div>
-                        <CardTitle>{info.title}</CardTitle>
-                        <CardDescription className="text-base text-gray-700">
-                          {info.description}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <Button variant="outline" className="bg-white">
-                          {existing?.length ? "Add Another" : "Set Up"}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </section>
-          </>
-        )}
+              {/* Feedback Request */}
+              <Card className="bg-[#fefce8] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <ThumbsUp className="h-5 w-5 text-yellow-500" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Feedback Request</CardTitle>
+                        <CardDescription>Request feedback after visits</CardDescription>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={config?.utility.feedback.enabled || false}
+                      onCheckedChange={(checked) =>
+                        handleUtilityUpdate({
+                          feedback: { ...config!.utility.feedback, enabled: checked },
+                        })
+                      }
+                      disabled={saving === "utility"}
+                    />
+                  </div>
+                </CardHeader>
+                {config?.utility.feedback.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Delay after transaction (minutes)</Label>
+                      <Select
+                        value={config.utility.feedback.delayMinutes.toString()}
+                        onValueChange={(v) =>
+                          handleUtilityUpdate({
+                            feedback: { ...config.utility.feedback, delayMinutes: parseInt(v) },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="15">15 minutes</SelectItem>
+                          <SelectItem value="30">30 minutes</SelectItem>
+                          <SelectItem value="60">1 hour</SelectItem>
+                          <SelectItem value="120">2 hours</SelectItem>
+                          <SelectItem value="240">4 hours</SelectItem>
+                          <SelectItem value="1440">24 hours</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {stats?.feedback && <CampaignStatsDisplay stats={stats.feedback} />}
+                  </CardContent>
+                )}
+              </Card>
+
+              {/* Review Request */}
+              <Card className="bg-[#f0fdf4] border-none">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg">
+                        <ExternalLink className="h-5 w-5 text-green-500" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Review Request</CardTitle>
+                        <CardDescription>Request Google/Zomato reviews</CardDescription>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={config?.utility.reviewRequest.enabled || false}
+                      onCheckedChange={(checked) =>
+                        handleUtilityUpdate({
+                          reviewRequest: { ...config!.utility.reviewRequest, enabled: checked },
+                        })
+                      }
+                      disabled={saving === "utility"}
+                    />
+                  </div>
+                </CardHeader>
+                {config?.utility.reviewRequest.enabled && (
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Days after visit to request</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={14}
+                        value={config.utility.reviewRequest.daysAfterVisit}
+                        onChange={(e) =>
+                          handleUtilityUpdate({
+                            reviewRequest: {
+                              ...config.utility.reviewRequest,
+                              daysAfterVisit: parseInt(e.target.value) || 1,
+                            },
+                          })
+                        }
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Review Link (Google/Zomato)</Label>
+                      <Input
+                        type="url"
+                        placeholder="https://g.page/r/..."
+                        value={config.utility.reviewRequest.reviewLink}
+                        onChange={(e) =>
+                          handleUtilityUpdate({
+                            reviewRequest: {
+                              ...config.utility.reviewRequest,
+                              reviewLink: e.target.value,
+                            },
+                          })
+                        }
+                        className="bg-white"
+                      />
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
 
-      {/* Create Auto-Campaign Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-lg">
+      {/* Add Tier Dialog */}
+      <Dialog open={showTierDialog} onOpenChange={setShowTierDialog}>
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>
-              Create {triggerTypeInfo[selectedTriggerType as keyof typeof triggerTypeInfo]?.title || "Auto-Campaign"}
-            </DialogTitle>
+            <DialogTitle>Add Win-back Tier</DialogTitle>
             <DialogDescription>
-              {triggerTypeInfo[selectedTriggerType as keyof typeof triggerTypeInfo]?.description}
+              Add a new inactivity threshold for win-back messages
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Campaign Name *</Label>
+              <Label>Days of Inactivity</Label>
               <Input
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Birthday Wishes"
+                type="number"
+                min={7}
+                max={365}
+                value={newTierDays}
+                onChange={(e) => setNewTierDays(parseInt(e.target.value) || 45)}
+              />
+              <p className="text-xs text-gray-500">
+                Send win-back message after {newTierDays} days of no visits
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTierDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddTier} disabled={saving === "winback-tier"}>
+              {saving === "winback-tier" ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              Add Tier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Festival Dialog */}
+      <Dialog open={showFestivalDialog} onOpenChange={setShowFestivalDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingFestival ? "Edit Festival" : "Add Festival"}</DialogTitle>
+            <DialogDescription>
+              Configure a festival campaign to send automated greetings
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Festival Name *</Label>
+              <Input
+                placeholder="e.g., Diwali, Christmas"
+                value={festivalForm.name}
+                onChange={(e) => setFestivalForm({ ...festivalForm, name: e.target.value })}
               />
             </div>
-
             <div className="space-y-2">
-              <Label>WhatsApp Template *</Label>
+              <Label>Date (MM-DD) *</Label>
+              <Input
+                placeholder="e.g., 11-01 for November 1st"
+                value={festivalForm.date}
+                onChange={(e) => setFestivalForm({ ...festivalForm, date: e.target.value })}
+                pattern="[0-1][0-9]-[0-3][0-9]"
+              />
+              <p className="text-xs text-gray-500">Format: MM-DD (e.g., 12-25 for Christmas)</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Days Before to Send</Label>
               <Select
-                value={formData.template.name}
-                onValueChange={(name) =>
-                  setFormData({ ...formData, template: { ...formData.template, name } })
-                }
+                value={festivalForm.daysOffset.toString()}
+                onValueChange={(v) => setFestivalForm({ ...festivalForm, daysOffset: parseInt(v) })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a template" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem key={t.name} value={t.name}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="0">On the day</SelectItem>
+                  <SelectItem value="1">1 day before</SelectItem>
+                  <SelectItem value="3">3 days before</SelectItem>
+                  <SelectItem value="5">5 days before</SelectItem>
+                  <SelectItem value="7">7 days before</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
-              <Label>Run Time (Daily)</Label>
-              <Input
-                type="time"
-                value={formData.triggerConfig.runTime}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    triggerConfig: { ...formData.triggerConfig, runTime: e.target.value },
-                  })
-                }
+            <div className="flex items-center justify-between">
+              <Label>Enable Campaign</Label>
+              <Switch
+                checked={festivalForm.enabled}
+                onCheckedChange={(checked) => setFestivalForm({ ...festivalForm, enabled: checked })}
               />
-            </div>
-
-            {(selectedTriggerType === "birthday" || selectedTriggerType === "anniversary") && (
-              <div className="space-y-2">
-                <Label>When to Send</Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={30}
-                    className="w-20"
-                    value={formData.triggerConfig.dateOffset?.days || 0}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        triggerConfig: {
-                          ...formData.triggerConfig,
-                          dateOffset: {
-                            days: parseInt(e.target.value) || 0,
-                            reference: formData.triggerConfig.dateOffset?.reference || "on",
-                          },
-                        },
-                      })
-                    }
-                  />
-                  <Select
-                    value={formData.triggerConfig.dateOffset?.reference || "on"}
-                    onValueChange={(value) =>
-                      setFormData({
-                        ...formData,
-                        triggerConfig: {
-                          ...formData.triggerConfig,
-                          dateOffset: {
-                            days: formData.triggerConfig.dateOffset?.days || 0,
-                            reference: value as "before" | "on" | "after",
-                          },
-                        },
-                      })
-                    }
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="before">days before</SelectItem>
-                      <SelectItem value="on">on the day</SelectItem>
-                      <SelectItem value="after">days after</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {selectedTriggerType === "winback" && (
-              <div className="space-y-2">
-                <Label>Inactivity Threshold (days)</Label>
-                <Input
-                  type="number"
-                  min={7}
-                  max={365}
-                  value={formData.triggerConfig.inactivity?.thresholdDays || 60}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      triggerConfig: {
-                        ...formData.triggerConfig,
-                        inactivity: { thresholdDays: parseInt(e.target.value) || 60 },
-                      },
-                    })
-                  }
-                />
-                <p className="text-sm text-gray-500">
-                  Send to customers who haven't visited for this many days
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Cooldown Period (days)</Label>
-              <Input
-                type="number"
-                min={1}
-                value={formData.triggerConfig.cooldownDays}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    triggerConfig: {
-                      ...formData.triggerConfig,
-                      cooldownDays: parseInt(e.target.value) || 30,
-                    },
-                  })
-                }
-              />
-              <p className="text-sm text-gray-500">
-                Minimum days before sending to the same customer again
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Audience Filters (Optional)</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs text-gray-500">Min Visits</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder="Any"
-                    value={formData.audienceFilters?.minVisits || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        audienceFilters: {
-                          ...formData.audienceFilters,
-                          minVisits: e.target.value ? parseInt(e.target.value) : undefined,
-                        },
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500">Min Total Spend (₹)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder="Any"
-                    value={formData.audienceFilters?.minTotalSpend || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        audienceFilters: {
-                          ...formData.audienceFilters,
-                          minTotalSpend: e.target.value ? parseInt(e.target.value) : undefined,
-                        },
-                      })
-                    }
-                  />
-                </div>
-              </div>
             </div>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button variant="outline" onClick={() => setShowFestivalDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Creating...
-                </>
+            <Button onClick={handleSaveFestival} disabled={saving === "festival"}>
+              {saving === "festival" ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
-                "Create & Activate"
+                <Save className="h-4 w-4 mr-2" />
               )}
+              {editingFestival ? "Save Changes" : "Add Festival"}
             </Button>
           </DialogFooter>
         </DialogContent>
