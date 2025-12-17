@@ -136,6 +136,27 @@ export async function validateSessionWithMeEndpoint(token: string): Promise<bool
   return true;
 }
 
+export async function fetchMe(token: string): Promise<User | null> {
+  const response = await fetch(`${config.apiUrl}/api/auth/me`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!data) return null;
+
+  const user = (data as { user?: unknown }).user;
+  if (!user || typeof user !== 'object') return null;
+  return user as User;
+}
+
 export async function completeRegistrationAccessCode(payload: { accessCode: string; password: string; username?: string }): Promise<RegisterCompleteResponse> {
   const response = await fetch(`${config.apiUrl}/api/auth/register/complete`, {
     method: 'POST',

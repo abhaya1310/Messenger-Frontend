@@ -5,11 +5,13 @@ function getBackendBaseUrl(): string {
     return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId: string }> }) {
     const authHeaders = await getAdminAuthHeaders(request);
     if (!authHeaders) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { orgId } = await ctx.params;
 
     let body: unknown;
     try {
@@ -18,16 +20,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
 
-    const orgIdFromBody = (body as any)?.orgId;
-    if (typeof orgIdFromBody !== 'string' || !orgIdFromBody) {
-        return NextResponse.json({ error: 'orgId is required' }, { status: 400 });
-    }
-
-    const res = await fetch(`${getBackendBaseUrl()}/api/admin/orgs`, {
+    const res = await fetch(`${getBackendBaseUrl()}/api/admin/org/${encodeURIComponent(orgId)}/user`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-ORG-ID': orgIdFromBody,
+            'X-ORG-ID': orgId,
             ...authHeaders,
         },
         body: JSON.stringify(body),

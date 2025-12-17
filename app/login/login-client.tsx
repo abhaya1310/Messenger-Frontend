@@ -14,7 +14,7 @@ import csatLogo from "@/csat logo.jpeg";
 export default function LoginClient() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { isAuthenticated, isLoading, login, loginLegacy } = useAuth();
+    const { isAuthenticated, isLoading, login, loginLegacy, user } = useAuth();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState<string | null>(null);
@@ -23,9 +23,9 @@ export default function LoginClient() {
 
     useEffect(() => {
         if (!isLoading && isAuthenticated) {
-            router.replace("/dashboard");
+            router.replace(user?.role === 'admin' ? "/admin" : "/dashboard");
         }
-    }, [isAuthenticated, isLoading, router]);
+    }, [isAuthenticated, isLoading, router, user?.role]);
 
     useEffect(() => {
         const registered = searchParams.get("registered");
@@ -52,8 +52,6 @@ export default function LoginClient() {
                     return;
                 }
             }
-
-            router.replace("/dashboard");
         } catch (err) {
             console.error("Login error:", err);
 

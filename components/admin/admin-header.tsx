@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { clearAuth } from "@/lib/auth";
+import { clearSelectedOrgId } from "@/lib/selected-org";
 
 export function AdminHeader() {
     const pathname = usePathname();
@@ -11,8 +13,10 @@ export function AdminHeader() {
     const onLogout = async () => {
         try {
             await fetch("/api/admin/auth/logout", { method: "POST" });
+            clearSelectedOrgId();
+            clearAuth();
         } finally {
-            router.replace("/admin/login");
+            router.replace("/login");
         }
     };
 

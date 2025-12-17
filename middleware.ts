@@ -4,18 +4,21 @@ import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from './lib/admin-
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
-    const isAdminPage = pathname.startsWith('/admin');
     const isAdminApi = pathname.startsWith('/api/admin');
 
-    if (!isAdminPage && !isAdminApi) {
+    if (!isAdminApi) {
         return NextResponse.next();
     }
 
-    const isPublicAdminPage = pathname === '/admin/login';
     const isPublicAdminApi =
         pathname === '/api/admin/auth/login' || pathname === '/api/admin/auth/logout';
 
-    if (isPublicAdminPage || isPublicAdminApi) {
+    if (isPublicAdminApi) {
+        return NextResponse.next();
+    }
+
+    const authorization = request.headers.get('authorization');
+    if (authorization) {
         return NextResponse.next();
     }
 
@@ -28,18 +31,12 @@ export async function middleware(request: NextRequest) {
     const verified = await verifyAdminSessionToken({ token, secret });
 
     if (!verified.ok) {
-        if (isAdminApi) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
-        const loginUrl = new URL('/admin/login', request.url);
-        loginUrl.searchParams.set('next', pathname);
-        return NextResponse.redirect(loginUrl);
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     return NextResponse.next();
 }
 
 export const config = {
-    matcher: ['/admin/:path*', '/api/admin/:path*'],
+    matcher: ['/api/admin/:path*'],
 };

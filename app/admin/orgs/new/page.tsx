@@ -3,6 +3,8 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { clearAuth, getAuthToken } from "@/lib/auth";
+import { setSelectedOrgId } from "@/lib/selected-org";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,9 +25,20 @@ export default function AdminNewOrgPage() {
         setIsSubmitting(true);
 
         try {
+            const token = getAuthToken();
+            if (!token) {
+                clearAuth();
+                router.replace(`/login?next=${encodeURIComponent('/admin/orgs/new')}`);
+                return;
+            }
+
             const res = await fetch("/api/admin/orgs", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-ORG-ID": orgId,
+                    Authorization: `Bearer ${token}`,
+                },
                 body: JSON.stringify({ orgId, orgName, timezone }),
             });
 
@@ -33,7 +46,12 @@ export default function AdminNewOrgPage() {
 
             if (!res.ok) {
                 if (res.status === 401) {
-                    router.replace(`/admin/login?reason=session_expired&next=${encodeURIComponent('/admin/orgs/new')}`);
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent('/admin/orgs/new')}`);
+                    return;
+                }
+                if (res.status === 403) {
+                    setError('Admin access required');
                     return;
                 }
                 setError((data as any)?.error || "Failed to create org");
@@ -41,6 +59,7 @@ export default function AdminNewOrgPage() {
             }
 
             const createdOrgId = (data as any)?.data?.orgId || orgId;
+            setSelectedOrgId(createdOrgId);
             router.push(`/admin/orgs/${encodeURIComponent(createdOrgId)}`);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to create org");

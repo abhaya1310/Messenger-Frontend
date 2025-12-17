@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { login as apiLogin, getStoredAuth } from "@/lib/auth";
 
 export default function AdminLoginClient() {
     const router = useRouter();
@@ -29,20 +30,14 @@ export default function AdminLoginClient() {
         setIsSubmitting(true);
 
         try {
-            const res = await fetch("/api/admin/auth/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
-            });
-
-            const data = await res.json().catch(() => ({}));
-
-            if (!res.ok) {
-                setError((data as any)?.error || "Login failed");
+            await apiLogin({ identifier: username, password });
+            const stored = getStoredAuth();
+            if (stored.user?.role !== 'admin') {
+                setError('Admin access required');
                 return;
             }
 
-            router.replace(nextPath);
+            window.location.href = nextPath;
         } catch (err) {
             setError(err instanceof Error ? err.message : "Login failed");
         } finally {

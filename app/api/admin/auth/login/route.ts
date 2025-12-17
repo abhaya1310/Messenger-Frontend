@@ -64,6 +64,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(backendData, { status: backendRes.status });
     }
 
+    const role = (backendData as { user?: { role?: unknown } })?.user?.role;
+    if (role !== 'admin') {
+        return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
     const accessToken = (backendData as { accessToken?: unknown })?.accessToken;
     const expiresInSeconds = (backendData as { expiresInSeconds?: unknown })?.expiresInSeconds;
 

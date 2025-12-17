@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { clearAuth, getAuthToken } from "@/lib/auth";
+import { setSelectedOrgId } from "@/lib/selected-org";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,12 +50,27 @@ export default function AdminOrgDetailsPage() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}`);
+            const token = getAuthToken();
+            if (!token) {
+                clearAuth();
+                router.replace(`/login?next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                return;
+            }
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}`, {
+                headers: { Authorization: `Bearer ${token}`, "X-ORG-ID": orgId },
+            });
             const data = (await res.json().catch(() => ({}))) as any;
 
             if (!res.ok) {
                 if (res.status === 401) {
-                    router.replace(`/admin/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    return;
+                }
+                if (res.status === 403) {
+                    setError("Admin access required");
+                    setOrg(null);
                     return;
                 }
                 setError(data?.error || "Failed to fetch org");
@@ -76,6 +93,7 @@ export default function AdminOrgDetailsPage() {
     };
 
     useEffect(() => {
+        setSelectedOrgId(orgId);
         load();
     }, [orgId]);
 
@@ -86,20 +104,33 @@ export default function AdminOrgDetailsPage() {
         setSaving(true);
 
         try {
-            const res = await fetch(
-                `/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/update-phone-number-id`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phoneNumberId, displayPhoneNumber, displayName }),
-                }
-            );
+            const token = getAuthToken();
+            if (!token) {
+                clearAuth();
+                router.replace(`/login?next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                return;
+            }
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/update-phone-number-id`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-ORG-ID": orgId,
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ phoneNumberId, displayPhoneNumber, displayName }),
+            });
 
             const data = await res.json().catch(() => ({}));
 
             if (!res.ok) {
                 if (res.status === 401) {
-                    router.replace(`/admin/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    return;
+                }
+                if (res.status === 403) {
+                    setSaveError("Admin access required");
                     return;
                 }
                 if (res.status === 409 && (data as any)?.error === 'phone_number_id_in_use') {
@@ -109,6 +140,10 @@ export default function AdminOrgDetailsPage() {
                             ? `phoneNumberId is already in use by orgId: ${otherOrgId}`
                             : 'phoneNumberId is already in use by another org'
                     );
+                    return;
+                }
+                if ((data as any)?.error === 'WhatsAppNotConfigured') {
+                    setSaveError('WhatsApp is not configured for this org');
                     return;
                 }
                 setSaveError((data as any)?.error || "Failed to update phone number id");

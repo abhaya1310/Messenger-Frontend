@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from '@/lib/admin-session';
 
 export async function getAdminAuthHeaders(request: NextRequest): Promise<Record<string, string> | null> {
+    const authorization = request.headers.get('authorization');
+    if (authorization) {
+        return { Authorization: authorization };
+    }
+
     const secret = process.env.ADMIN_SESSION_SECRET;
     if (!secret) {
         return null;
