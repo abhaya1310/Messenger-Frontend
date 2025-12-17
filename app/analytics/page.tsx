@@ -9,11 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { 
-  BarChart3, 
-  TrendingUp, 
-  MessageSquare, 
-  CheckCircle, 
+import {
+  BarChart3,
+  TrendingUp,
+  MessageSquare,
+  CheckCircle,
   Users,
   Star,
   Download,
@@ -24,22 +24,22 @@ import {
   ArrowUpRight,
   ArrowDownRight,
 } from "lucide-react";
-import { 
+import {
   exportAnalytics,
   fetchCampaignAnalytics,
-  fetchCustomerAnalytics,
+  fetchSegmentCounts,
   fetchSyncStatus,
   fetchAnalyticsSummary,
   fetchTemplatesAnalytics,
 } from "@/lib/api";
-import type { CampaignAnalytics, CustomerAnalytics, Campaign } from "@/lib/types/campaign";
+import type { CampaignAnalytics, CustomerAnalytics, Campaign, SegmentCounts } from "@/lib/types/campaign";
 import type { SyncStatus } from "@/lib/types/pos";
 import { Breadcrumb } from "@/components/breadcrumb";
 
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState("7d");
-  
+
   // Analytics data
   const [campaignAnalytics, setCampaignAnalytics] = useState<CampaignAnalytics | null>(null);
   const [customerAnalytics, setCustomerAnalytics] = useState<CustomerAnalytics | null>(null);
@@ -70,10 +70,10 @@ export default function AnalyticsPage() {
     setLoading(true);
     try {
       const { start, end } = resolveRange(dateRange);
-      
+
       const [campaignData, customerData, summaryData, syncData] = await Promise.allSettled([
         fetchCampaignAnalytics(),
-        fetchCustomerAnalytics(),
+        fetchSegmentCounts(),
         fetchAnalyticsSummary({ start, end }),
         fetchSyncStatus(),
       ]);
@@ -81,9 +81,19 @@ export default function AnalyticsPage() {
       if (campaignData.status === 'fulfilled') {
         setCampaignAnalytics(campaignData.value);
       }
-      
+
       if (customerData.status === 'fulfilled') {
-        setCustomerAnalytics(customerData.value);
+        const segments = customerData.value as SegmentCounts;
+        setCustomerAnalytics({
+          summary: {
+            totalCustomers: segments.total || 0,
+            newCustomersThisMonth: segments.frequency?.new || 0,
+            activeCustomers: segments.recency?.active || 0,
+            lapsedCustomers: segments.recency?.lapsed || 0,
+          },
+          visitTrends: [],
+          topCustomers: [],
+        });
       }
 
       if (summaryData.status === 'fulfilled') {
@@ -263,7 +273,7 @@ export default function AnalyticsPage() {
                         <span className="text-sm font-medium w-24">{item.label}</span>
                         <div className="flex items-center gap-3 flex-1">
                           <div className="w-full bg-gray-100 rounded-full h-3">
-                            <div 
+                            <div
                               className={`${item.color} h-3 rounded-full transition-all`}
                               style={{ width: `${item.percent}%` }}
                             />
@@ -522,10 +532,10 @@ export default function AnalyticsPage() {
                   <div className="h-[200px] flex items-end justify-between gap-1">
                     {customerAnalytics.visitTrends.slice(-14).map((day, index) => (
                       <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                        <div 
+                        <div
                           className="w-full bg-[var(--connectnow-accent)] rounded-t"
-                          style={{ 
-                            height: `${Math.max(20, (day.visits / Math.max(...customerAnalytics.visitTrends.map(d => d.visits))) * 150)}px` 
+                          style={{
+                            height: `${Math.max(20, (day.visits / Math.max(...customerAnalytics.visitTrends.map(d => d.visits))) * 150)}px`
                           }}
                         />
                         <span className="text-xs text-gray-500">

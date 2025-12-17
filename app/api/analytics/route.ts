@@ -6,12 +6,19 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const queryString = searchParams.toString();
-    
+
+    const authorization = request.headers.get('authorization');
+    const orgId = request.headers.get('x-org-id');
+    if (!authorization) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const response = await fetch(`${BACKEND_URL}/api/analytics${queryString ? `?${queryString}` : ''}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'X-ADMIN-TOKEN': process.env.ADMIN_TOKEN || '',
+        Authorization: authorization,
+        ...(orgId ? { 'X-ORG-ID': orgId } : {}),
       },
     });
 

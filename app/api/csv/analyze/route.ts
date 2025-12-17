@@ -9,28 +9,35 @@ export async function POST(request: NextRequest) {
     if (!formData.get('file')) {
       return NextResponse.json({ error: 'file missing' }, { status: 400 });
     }
-    
+
+    const authorization = request.headers.get('authorization');
+    const orgId = request.headers.get('x-org-id');
+    if (!authorization) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Reconstruct FormData for backend
     const backendFormData = new FormData();
     const file = formData.get('file') as File;
     const templateName = formData.get('templateName') as string;
-    
+
     console.log('[csv-analyze-proxy]', {
       fileName: file?.name,
       fileSize: file?.size,
       templateName,
-      hasAdminToken: !!process.env.ADMIN_TOKEN
+      hasAuthorization: !!authorization,
     });
-    
+
     backendFormData.append('file', file);
     if (templateName) {
       backendFormData.append('templateName', templateName);
     }
-    
+
     const response = await fetch(`${BACKEND_URL}/api/csv/analyze`, {
       method: 'POST',
       headers: {
-        'X-ADMIN-TOKEN': process.env.ADMIN_TOKEN || '',
+        Authorization: authorization,
+        ...(orgId ? { 'X-ORG-ID': orgId } : {}),
       },
       body: backendFormData,
     });

@@ -4,10 +4,17 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 
 export async function GET(request: NextRequest) {
   try {
+    const authorization = request.headers.get('authorization');
+    const orgId = request.headers.get('x-org-id');
+    if (!authorization) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const response = await fetch(`${BACKEND_URL}/api/analytics/export`, {
       method: 'GET',
       headers: {
-        'X-ADMIN-TOKEN': process.env.ADMIN_TOKEN || '',
+        Authorization: authorization,
+        ...(orgId ? { 'X-ORG-ID': orgId } : {}),
       },
     });
 
@@ -16,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     const csv = await response.text();
-    
+
     return new NextResponse(csv, {
       status: 200,
       headers: {

@@ -214,7 +214,13 @@ export async function fetchTemplates(limit?: number): Promise<{ data: Template[]
   console.log('[fetchTemplates] NEXT_PUBLIC_BACKEND_URL:', process.env.NEXT_PUBLIC_BACKEND_URL);
 
   try {
-    const res = await fetchWithErrorHandling(url.toString());
+    const orgId = getCurrentOrgId();
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+    const res = await fetchWithErrorHandling(url.toString(), { headers });
     const data = await res.json();
 
     // Log the response for debugging
@@ -264,11 +270,17 @@ export async function analyzeTemplate(templateName: string): Promise<{ templateN
     throw new Error('analyzeTemplate can only be called from the client side');
   }
 
-  const res = await fetchWithErrorHandling(`/api/templates/analyze`, {
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(`${API_BASE}/api/templates/analyze`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({ templateName }),
   });
 
@@ -286,9 +298,16 @@ export async function analyzeCsv(file: File, templateName?: string): Promise<Csv
     formData.append('templateName', templateName);
   }
 
-  const res = await fetchWithErrorHandling(`/api/csv/analyze`, {
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(`${API_BASE}/api/csv/analyze`, {
     method: 'POST',
     body: formData,
+    headers,
   });
 
   return res.json();
@@ -306,7 +325,13 @@ export async function fetchAnalytics(params?: Record<string, string>): Promise<A
     });
   }
 
-  const res = await fetchWithErrorHandling(url.toString());
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(url.toString(), { headers });
   return res.json();
 }
 
@@ -315,7 +340,13 @@ export async function exportAnalytics(): Promise<void> {
     throw new Error('exportAnalytics can only be called from the client side');
   }
 
-  const res = await fetchWithErrorHandling(`/api/analytics/export`);
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetchWithErrorHandling(`${API_BASE}/api/analytics/export`, { headers });
 
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
@@ -638,11 +669,17 @@ export async function sendTextMessage(
     throw new Error('sendTextMessage can only be called from the client side');
   }
 
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+
   const res = await fetchWithErrorHandling(`${API_BASE}/send-text`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       to,
       text,
@@ -1219,12 +1256,4 @@ export async function updateServiceConfig(orgId: string, update: ServiceUpdate):
  */
 export async function fetchCampaignAnalytics(): Promise<CampaignAnalytics> {
   return apiClient<CampaignAnalytics>('/api/analytics/campaigns');
-}
-
-/**
- * @deprecated Use fetchSegmentCounts() instead
- * Fetch customer analytics
- */
-export async function fetchCustomerAnalytics(): Promise<CustomerAnalytics> {
-  return apiClient<CustomerAnalytics>('/api/analytics/customers');
 }

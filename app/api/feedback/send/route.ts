@@ -5,12 +5,19 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
+
+    const authorization = request.headers.get('authorization');
+    const orgId = request.headers.get('x-org-id');
+    if (!authorization) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const response = await fetch(`${BACKEND_URL}/api/feedback/send-selected`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-ADMIN-TOKEN': process.env.ADMIN_TOKEN || '',
+        Authorization: authorization,
+        ...(orgId ? { 'X-ORG-ID': orgId } : {}),
       },
       body: JSON.stringify(body),
     });
