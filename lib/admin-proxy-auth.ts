@@ -7,6 +7,11 @@ export async function getAdminAuthHeaders(request: NextRequest): Promise<Record<
         return { Authorization: authorization };
     }
 
+    const adminToken = request.headers.get('x-admin-token');
+    if (adminToken) {
+        return { 'X-ADMIN-TOKEN': adminToken };
+    }
+
     const secret = process.env.ADMIN_SESSION_SECRET;
     if (!secret) {
         return null;
