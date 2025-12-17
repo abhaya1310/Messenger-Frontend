@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AdminHeader } from "@/components/admin/admin-header";
 import { clearAuth, getAuthToken } from "@/lib/auth";
 import { setSelectedOrgId } from "@/lib/selected-org";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -161,11 +160,10 @@ export default function AdminOrgDetailsPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <AdminHeader />
             <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
                 <div>
                     <h1 className="text-2xl font-semibold">Org: {orgId}</h1>
-                    {org?.orgName && <p className="text-sm text-muted-foreground">{org.orgName}</p>}
+                    <p className="text-sm text-muted-foreground">Manage WhatsApp configuration and status.</p>
                 </div>
 
                 {loading && <p className="text-sm text-muted-foreground">Loading...</p>}

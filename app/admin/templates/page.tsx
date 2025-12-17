@@ -12,7 +12,6 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { hasFlowComponent, getFlowButtons } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MessagePreview } from "@/components/message-preview";
-import { AdminHeader } from "@/components/admin/admin-header";
 
 export default function AdminTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -99,7 +98,6 @@ export default function AdminTemplatesPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
         <div className="flex items-center justify-center py-24">
           <div className="text-center">
             <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
@@ -112,8 +110,7 @@ export default function AdminTemplatesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AdminHeader />
-      <div className="bg-white border-b">
+      <header className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div>
@@ -131,7 +128,7 @@ export default function AdminTemplatesPage() {
             </Button>
           </div>
         </div>
-      </div>
+      </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Breadcrumb items={[{ label: "Admin", href: "/admin" }, { label: "Templates" }]} />

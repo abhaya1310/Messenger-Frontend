@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import type { Template } from "@/lib/api";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
-import { AdminHeader } from "@/components/admin/admin-header";
 
 function newId(prefix: string) {
     return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
@@ -192,8 +191,6 @@ export default function AdminCampaignsPage() {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <AdminHeader />
-
             <header className="bg-white border-b">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center py-6">

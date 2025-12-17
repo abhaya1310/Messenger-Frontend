@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AdminHeader } from "@/components/admin/admin-header";
 import { clearAuth, getAuthToken } from "@/lib/auth";
 import { setSelectedOrgId } from "@/lib/selected-org";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,7 +69,6 @@ export default function AdminNewOrgPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <AdminHeader />
             <div className="mx-auto max-w-5xl px-4 py-8">
                 <Card>
                     <CardHeader>
