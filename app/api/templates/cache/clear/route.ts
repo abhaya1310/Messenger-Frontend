@@ -11,7 +11,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const res = await fetch(`${getBackendBaseUrl()}/api/templates/cache/clear`, {
+    const url = new URL(`${getBackendBaseUrl()}/api/templates/cache/clear`);
+    const scope = request.nextUrl.searchParams.get('scope');
+    if (scope) url.searchParams.set('scope', scope);
+
+    const res = await fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

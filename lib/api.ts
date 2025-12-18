@@ -198,93 +198,11 @@ export interface ConversationHistoryResponse {
 }
 
 export async function fetchTemplates(limit?: number): Promise<{ data: Template[] }> {
-  // Ensure we're in browser environment
-  if (typeof window === 'undefined') {
-    throw new Error('fetchTemplates can only be called from the client side');
-  }
-
-  const url = new URL('/api/templates', API_BASE);
-  if (limit) {
-    url.searchParams.append('limit', limit.toString());
-  }
-
-  // Log the URL being called for debugging
-  console.log('[fetchTemplates] Calling:', url.toString());
-  console.log('[fetchTemplates] API_BASE:', API_BASE);
-  console.log('[fetchTemplates] NEXT_PUBLIC_BACKEND_URL:', process.env.NEXT_PUBLIC_BACKEND_URL);
-
-  try {
-    const orgId = getCurrentOrgId();
-    const token = getAuthToken();
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (!token && orgId) headers['X-ORG-ID'] = orgId;
-
-    const res = await fetchWithErrorHandling(url.toString(), { headers });
-    const data = await res.json();
-
-    // Log the response for debugging
-    console.log('[fetchTemplates] Response status:', res.status);
-    console.log('[fetchTemplates] Response data:', data);
-
-    // Check if the response contains an error
-    if (data.error) {
-      console.error('[fetchTemplates] Backend error:', data);
-      const errorMsg = data.details || data.error || 'Failed to fetch templates';
-      // Include backend URL in error if available
-      if (data.backendUrl) {
-        console.error('[fetchTemplates] Backend URL used:', data.backendUrl);
-      }
-      throw new Error(errorMsg);
-    }
-
-    // Check if data.data exists and is an array
-    if (!data.data || !Array.isArray(data.data)) {
-      console.warn('[fetchTemplates] Unexpected response format:', data);
-      if (data.data === null || data.data === undefined) {
-        throw new Error('Backend returned empty templates. This might indicate WABA_ID is not set in your backend environment variables.');
-      }
-    }
-
-    return data;
-  } catch (error) {
-    console.error('[fetchTemplates] Error:', error);
-    // Re-throw with more context
-    if (error instanceof Error) {
-      if (error.message.includes('WABA_ID')) {
-        throw new Error('WABA_ID is not configured on the backend. Please set WABA_ID in your backend environment variables (not the frontend).');
-      }
-      if (error.message.includes('Failed to fetch') || error.message.includes('Network request failed')) {
-        throw new Error(`Cannot connect to backend at ${API_BASE}. Please verify NEXT_PUBLIC_BACKEND_URL is set correctly and the backend is accessible.`);
-      }
-      if (error.message.includes('empty templates')) {
-        throw new Error('Backend returned no templates. This might indicate WABA_ID is not set in your backend environment variables.');
-      }
-    }
-    throw error;
-  }
+  throw new Error('Templates are admin-only. Use the Admin portal (/admin/templates).');
 }
 
 export async function analyzeTemplate(templateName: string): Promise<{ templateName: string; analysis: TemplateAnalysis }> {
-  if (typeof window === 'undefined') {
-    throw new Error('analyzeTemplate can only be called from the client side');
-  }
-
-  const orgId = getCurrentOrgId();
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (!token && orgId) headers['X-ORG-ID'] = orgId;
-
-  const res = await fetchWithErrorHandling(`${API_BASE}/api/templates/analyze`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ templateName }),
-  });
-
-  return res.json();
+  throw new Error('Templates are admin-only. Use the Admin portal (/admin/templates).');
 }
 
 export async function analyzeCsv(file: File, templateName?: string): Promise<CsvAnalysis> {

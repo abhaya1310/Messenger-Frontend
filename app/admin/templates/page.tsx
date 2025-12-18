@@ -12,8 +12,11 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { hasFlowComponent, getFlowButtons } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MessagePreview } from "@/components/message-preview";
+import { clearAuth, getAuthToken } from "@/lib/auth";
+import { useRouter } from "next/navigation";
 
 export default function AdminTemplatesPage() {
+  const router = useRouter();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -21,13 +24,49 @@ export default function AdminTemplatesPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadTemplates = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        clearAuth();
+        router.replace(`/login?next=${encodeURIComponent("/admin/templates")}`);
+        return;
+      }
+
+      const res = await fetch(`/api/templates?limit=15`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          clearAuth();
+          router.replace(`/login?reason=session_expired&next=${encodeURIComponent("/admin/templates")}`);
+          return;
+        }
+        const msg = (data as any)?.error || (data as any)?.message || "Failed to load templates";
+        throw new Error(msg);
+      }
+
+      setTemplates((((data as any)?.data || []) as Template[]) ?? []);
+    } catch (e) {
+      setTemplates([]);
+      setError(e instanceof Error ? e.message : "Failed to load templates");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      setTemplates([]);
-      setLoading(false);
-    }, 250);
-    return () => clearTimeout(t);
+    loadTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getStatusBadgeVariant = (status: string) => {
@@ -83,11 +122,40 @@ export default function AdminTemplatesPage() {
   }, [templates, searchTerm, statusFilter, categoryFilter]);
 
   const handleRefresh = async () => {
+    setError(null);
     setLoading(true);
-    setTimeout(() => {
-      setTemplates([]);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        clearAuth();
+        router.replace(`/login?next=${encodeURIComponent("/admin/templates")}`);
+        return;
+      }
+
+      const res = await fetch("/api/templates/refresh", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          clearAuth();
+          router.replace(`/login?reason=session_expired&next=${encodeURIComponent("/admin/templates")}`);
+          return;
+        }
+        const msg = (data as any)?.error || (data as any)?.message || "Failed to refresh templates";
+        throw new Error(msg);
+      }
+
+      await loadTemplates();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to refresh templates");
+    } finally {
       setLoading(false);
-    }, 300);
+    }
   };
 
   const handlePreview = (template: Template) => {
@@ -107,6 +175,8 @@ export default function AdminTemplatesPage() {
       </div>
     );
   }
+
+  const showIntegrationPending = !loading && templates.length === 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -132,6 +202,40 @@ export default function AdminTemplatesPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Breadcrumb items={[{ label: "Admin", href: "/admin" }, { label: "Templates" }]} />
+
+        {error && (
+          <Card className="mb-6 border-destructive/30">
+            <CardContent className="pt-6">
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {showIntegrationPending && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Integration pending</CardTitle>
+              <CardDescription>
+                Templates will appear here once backend WhatsApp integration is configured.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <Button onClick={handleRefresh} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+                  Refresh templates
+                </Button>
+                <div className="text-sm text-muted-foreground">
+                  <div>Checklist:</div>
+                  <div>- WHATSAPP_PERMANENT_TOKEN configured on backend</div>
+                  <div>- WABA_ID configured on backend</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="mb-6">
           <CardHeader>
@@ -278,18 +382,12 @@ export default function AdminTemplatesPage() {
           })}
         </div>
 
-        {filteredTemplates.length === 0 && !loading && (
+        {filteredTemplates.length === 0 && !loading && templates.length > 0 && (
           <Card>
             <CardContent className="text-center py-12">
               <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No templates yet</h3>
-              <p className="text-gray-600 mb-4">
-                Templates will appear here once backend integration is enabled.
-              </p>
-              <Button onClick={handleRefresh}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh Templates
-              </Button>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No templates found</h3>
+              <p className="text-gray-600 mb-4">Try adjusting your filters to see more templates.</p>
             </CardContent>
           </Card>
         )}

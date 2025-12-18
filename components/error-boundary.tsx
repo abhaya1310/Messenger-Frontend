@@ -30,7 +30,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+
     // Call custom error handler if provided
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
@@ -71,9 +71,9 @@ export class ErrorBoundary extends Component<Props, State> {
                   </p>
                 </div>
               )}
-              
+
               <div className="flex flex-col sm:flex-row gap-2">
-                <Button 
+                <Button
                   onClick={this.handleRetry}
                   className="flex-1"
                   variant="default"
@@ -81,13 +81,13 @@ export class ErrorBoundary extends Component<Props, State> {
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Try Again
                 </Button>
-                
-                <Button 
+
+                <Button
                   asChild
                   variant="outline"
                   className="flex-1"
                 >
-                  <Link href="/templates">
+                  <Link href="/dashboard">
                     <Home className="w-4 h-4 mr-2" />
                     Go Home
                   </Link>
@@ -107,7 +107,7 @@ export class ErrorBoundary extends Component<Props, State> {
 export function useErrorHandler() {
   return (error: Error, errorInfo?: any) => {
     console.error('Error caught by useErrorHandler:', error, errorInfo);
-    
+
     // You can add additional error reporting here
     // e.g., send to error tracking service
   };
@@ -125,6 +125,6 @@ export function withErrorBoundary<P extends object>(
   );
 
   WrappedComponent.displayName = `withErrorBoundary(${Component.displayName || Component.name})`;
-  
+
   return WrappedComponent;
 }

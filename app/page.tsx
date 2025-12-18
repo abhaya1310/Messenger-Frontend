@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  MessageSquare, 
-  BarChart3, 
-  Users, 
-  Megaphone, 
+import {
+  MessageSquare,
+  BarChart3,
+  Users,
+  Megaphone,
   Gift,
-  ArrowRight 
+  ArrowRight
 } from "lucide-react";
 
 export default function HomePage() {
@@ -40,28 +40,6 @@ export default function HomePage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Quick Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer group">
-            <Link href="/templates">
-              <CardHeader>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">
-                    <MessageSquare className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <CardTitle className="text-xl">Templates</CardTitle>
-                </div>
-                <CardDescription>
-                  View and manage your WhatsApp message templates
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center text-blue-600 font-medium group-hover:gap-2 transition-all">
-                  <span>Manage Templates</span>
-                  <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </CardContent>
-            </Link>
-          </Card>
-
           <Card className="hover:shadow-lg transition-shadow cursor-pointer group">
             <Link href="/campaigns">
               <CardHeader>

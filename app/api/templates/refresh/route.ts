@@ -5,18 +5,14 @@ function getBackendBaseUrl(): string {
     return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
 }
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
     const authHeaders = await getAdminAuthHeaders(request);
     if (!authHeaders) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const url = new URL(`${getBackendBaseUrl()}/api/templates`);
-    const limit = request.nextUrl.searchParams.get('limit');
-    if (limit) url.searchParams.set('limit', limit);
-
-    const res = await fetch(url, {
-        method: 'GET',
+    const res = await fetch(`${getBackendBaseUrl()}/api/templates/refresh`, {
+        method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             ...authHeaders,
