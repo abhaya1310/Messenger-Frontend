@@ -30,9 +30,11 @@ The frontend is a **Next.js 15** app (App Router) that primarily performs **clie
 | Next.js Route Handlers       |
 | app/api/*                    |
 | Proxy to backend using       |
-| BACKEND_URL / ADMIN_TOKEN    |
+| BACKEND_URL                  |
 +------------------------------+
 ```
+
+For an exhaustive, code-accurate list of endpoints and call sites, see `BACKEND_INTEGRATIONS.md`.
 
 ## Tech Stack
 
@@ -135,11 +137,13 @@ Admin access is enforced based on the authenticated user's role.
 
 Admin API calls are routed through Next.js route handlers under `app/api/admin/*`.
 
-- The admin UI sends:
-  - `Authorization: Bearer <token>`
-  - `X-ORG-ID: <orgId>` for org-scoped endpoints
-- The proxy routes forward `Authorization` and `X-ORG-ID` to the backend.
-- Proxy auth helper: `lib/admin-proxy-auth.ts` prefers the incoming `Authorization` header and only falls back to the legacy admin session cookie if present.
+- The admin UI typically sends `Authorization: Bearer <token>`.
+- Admin proxies accept (and forward) either:
+  - `Authorization: Bearer <admin_jwt>` (preferred)
+  - `X-ADMIN-TOKEN: <admin_token>` (break-glass)
+  - or an admin session cookie (`connectnow_admin_session`) minted via `/api/admin/auth/login`
+- Proxy auth helper: `lib/admin-proxy-auth.ts` implements this precedence.
+- Middleware: `middleware.ts` guards `/api/admin/*` requests and allows Authorization header, `X-ADMIN-TOKEN`, or a valid admin session cookie.
 
 Org selection:
 
@@ -154,6 +158,11 @@ The main user onboarding flow is access-code based:
 - Verify: `POST /api/auth/register/verify`
 - Complete: `POST /api/auth/register/complete`
 - After success, user is redirected to `/login` (no auto-login).
+
+Admin → Invite flow:
+
+- Admin creates org and invites a specific email via `/admin/orgs/new`.
+- The invite endpoint returns an `accessCode` that the invited user redeems via `/onboarding`.
 
 ## Backend Communication
 
@@ -177,7 +186,11 @@ Examples:
 
 ### Legacy pattern: Next.js proxy route handlers (`app/api/*`)
 
-This repo still contains route handlers that proxy backend requests.
+This repo still contains route handlers that proxy backend requests and they are actively used for:
+
+- `/api/admin/*` (admin portal)
+- `/api/campaign-runs/*` (campaign runs UI)
+- Multipart endpoints like `/api/media/upload` and `/api/campaign-runs/:id/audience/csv`
 
 - Templates proxies use:
   - `BACKEND_URL || NEXT_PUBLIC_BACKEND_URL || http://localhost:3000`
@@ -207,7 +220,7 @@ Admin proxy routes:
 - `app/api/admin/org/[orgId]/whatsapp/status/route.ts`
 - `app/api/admin/whatsapp/orgs/route.ts`
 
-The repo includes `app/api/README.md` marking these as deprecated.
+The repo includes `app/api/README.md` marking these as deprecated; treat that file as outdated.
 
 ## Key Feature Flows
 

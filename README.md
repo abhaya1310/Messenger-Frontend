@@ -30,11 +30,12 @@ This is a **Next.js 15** application built with:
   - Login page (`/login`) backed by `POST /api/auth/login`.
   - Uses `Authorization: Bearer <accessToken>` on authenticated calls.
   - Validates stored sessions via `GET /api/auth/me` on app boot.
-  - User onboarding via access code at `/onboarding`.
+  - User onboarding via **access code** at `/onboarding` (verify + set password).
 - **Admin Portal (role-based)**
   - Admin routes under `/admin/*` are guarded client-side via `GET /api/auth/me` and require `user.role === "admin"`.
   - Admin org context is persisted as `selectedOrgId` in localStorage.
   - Admin UI calls `/api/admin/*` Next.js route handlers, passing `Authorization: Bearer <accessToken>` and (for org-scoped calls) `X-ORG-ID: <orgId>`.
+  - Admin onboarding flow: create org + invite user email to generate an **access code** (see `/admin/orgs/new`).
 - **Dashboard**
   - KPI overview and customer segments (`/dashboard`).
 - **Templates + Bulk Send**
@@ -55,7 +56,7 @@ This is a **Next.js 15** application built with:
 
 - **`/login`**: Auth entrypoint.
 - **`/admin/login`**: Admin login page (uses standard JWT login, then requires `role=admin`).
-- **`/admin/orgs/new`**: Create a new org (admin-only).
+- **`/admin/orgs/new`**: Create a new org + invite a user email (admin-only). Displays `accessCode` + `expiresAt`.
 - **`/admin/orgs/[orgId]`**: Org details + WhatsApp configuration (admin-only).
 - **`/admin/templates`**: Admin templates browser (UI mirrors `/templates`).
 - **`/admin/campaigns`**: Admin campaigns UI (UI mirrors `/campaigns`).
@@ -130,7 +131,17 @@ Open the app at:
 
 The frontend primarily makes **direct API calls** to the backend using the `NEXT_PUBLIC_BACKEND_URL` environment variable (see `lib/config.ts` and `lib/api.ts`).
 
-This repo also contains **Next.js route handlers** under `app/api/*` that proxy requests server-side using `BACKEND_URL` (and `NEXT_PUBLIC_API_URL` for feedback routes). These route handlers forward `Authorization` when present and some calls also forward `X-ORG-ID` for tenant scoping.
+This repo also contains **Next.js route handlers** under `app/api/*` that proxy requests server-side using `BACKEND_URL` (and `NEXT_PUBLIC_API_URL` for feedback routes). These route handlers are actively used for:
+
+- `/api/admin/*` (admin portal operations)
+- `/api/campaign-runs/*` (campaign runs UI)
+- Multipart requests like `/api/media/upload` and `/api/campaign-runs/:id/audience/csv`
+
+They forward admin/user auth headers as needed.
+
+For an exhaustive, code-accurate list of integrations, see:
+
+- `BACKEND_INTEGRATIONS.md`
 
 ```
 Frontend (Next.js)          Backend (Express)
@@ -380,6 +391,13 @@ Next.js automatically reloads when you make changes to:
 | `ADMIN_SESSION_SECRET` | Secret used to sign the admin portal session cookie (server only) | (empty) |
 | `ADMIN_PORTAL_USERNAME` | Optional admin portal username allowlist (server only) | (empty) |
 | `ADMIN_PORTAL_PASSWORD` | Optional admin portal password allowlist (server only) | (empty) |
+
+### Backend prerequisites (for access codes)
+
+The **invite/access-code onboarding** flow requires backend configuration:
+
+- Required on backend: `REGISTRATION_CODE_PEPPER`
+- Optional on backend: `REGISTRATION_CODE_TTL_SECONDS` (defaults to 86400)
 
 ### Environment File
 
