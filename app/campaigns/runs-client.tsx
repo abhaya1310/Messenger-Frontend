@@ -305,6 +305,12 @@ export default function CampaignRunsClient() {
             return;
         }
 
+        const selectedDefinition = definitions.find((d) => d._id === createDefinitionId);
+        if (!selectedDefinition) {
+            setError("Please select a campaign from the published catalog");
+            return;
+        }
+
         if (createAudienceSource === "pos" && !posEnabled) {
             setError("POS integration is not enabled for this org");
             return;
