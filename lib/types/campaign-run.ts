@@ -1,4 +1,4 @@
-export type CampaignRunStatus = 'draft' | 'scheduled' | 'running' | 'completed' | 'cancelled' | 'failed';
+export type CampaignRunStatus = 'draft' | 'scheduled' | 'waiting_for_credits' | 'running' | 'completed' | 'cancelled' | 'failed';
 
 export type CampaignAudienceSource = 'csv' | 'pos';
 
@@ -34,6 +34,13 @@ export interface CampaignRun {
     sentCount?: number;
     failedCount?: number;
     lastError?: string;
+    creditsReserved?: number;
+    audienceSnapshot?: {
+        snapshotId: string;
+        totalCount: number;
+        filteredCount: number;
+        throttledCount?: number;
+    };
     createdAt: string;
 }
 

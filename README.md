@@ -36,13 +36,18 @@ This is a **Next.js 15** application built with:
   - Admin org context is persisted as `selectedOrgId` in localStorage.
   - Admin UI calls `/api/admin/*` Next.js route handlers, passing `Authorization: Bearer <accessToken>` and (for org-scoped calls) `X-ORG-ID: <orgId>`.
   - Admin onboarding flow: create org + invite user email to generate an **access code** (see `/admin/orgs/new`).
+  - Admin credits operations:
+    - Org list with credits summary (`/admin/orgs`) via `GET /api/admin/whatsapp/orgs`
+    - Org credits drill-down (`/admin/orgs/[orgId]/credits`) showing balances, refill, and ledger
 - **Dashboard**
   - KPI overview and customer segments (`/dashboard`).
+  - Live WhatsApp credits balances (`/dashboard`) via `GET /api/credits/me`.
 - **Templates + Bulk Send**
   - Browse templates (`/templates`).
   - CSV upload + intelligent mapping + preview + batched sending (`/templates/[templateName]/send`).
 - **Campaigns**
   - Create and schedule campaigns (`/campaigns`).
+  - Campaign run scheduling includes a credits precheck and can show `waiting_for_credits` when a run is queued but awaiting credit availability.
 - **Auto Campaign Settings**
   - Configure birthday/anniversary/first-visit/winback/festivals + utility messaging (`/auto-campaigns`).
 - **Analytics**
@@ -56,8 +61,10 @@ This is a **Next.js 15** application built with:
 
 - **`/login`**: Auth entrypoint.
 - **`/admin/login`**: Admin login page (uses standard JWT login, then requires `role=admin`).
+- **`/admin/orgs`**: Admin org list + WhatsApp status + credits summary (admin-only).
 - **`/admin/orgs/new`**: Create a new org + invite a user email (admin-only). Displays `accessCode` + `expiresAt`.
 - **`/admin/orgs/[orgId]`**: Org details + WhatsApp configuration (admin-only).
+- **`/admin/orgs/[orgId]/credits`**: Org credits balances + refill + ledger (admin-only).
 - **`/admin/templates`**: Admin templates browser (UI mirrors `/templates`).
 - **`/admin/campaigns`**: Admin campaigns UI (UI mirrors `/campaigns`).
 - **`/onboarding`**: Access-code based account setup.
@@ -135,9 +142,19 @@ This repo also contains **Next.js route handlers** under `app/api/*` that proxy 
 
 - `/api/admin/*` (admin portal operations)
 - `/api/campaign-runs/*` (campaign runs UI)
+- Credits endpoints (`/api/credits/*`, `/api/admin/org/*/credits*`)
 - Multipart requests like `/api/media/upload` and `/api/campaign-runs/:id/audience/csv`
 
 They forward admin/user auth headers as needed.
+
+Credits-related proxy routes:
+
+- `GET /api/credits/me`
+- `GET /api/campaign-runs/[id]/credits/precheck`
+- `GET /api/admin/whatsapp/orgs` (org list + WhatsApp config + credits summary)
+- `GET /api/admin/org/[orgId]/credits`
+- `POST /api/admin/org/[orgId]/credits/refill`
+- `GET /api/admin/org/[orgId]/credits/ledger`
 
 For an exhaustive, code-accurate list of integrations, see:
 

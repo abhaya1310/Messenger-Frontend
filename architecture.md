@@ -253,6 +253,12 @@ The repo includes `app/api/README.md` marking these as deprecated; treat that fi
 - Uses `lib/api.ts` campaign functions (via `apiClient()`)
 - Uses org + token headers when available
 
+Credits gating:
+
+- Campaign run scheduling is protected by a server-authoritative credits system.
+- The Campaign Runs UI performs a credits precheck before attempting to schedule.
+- A run can transition to `waiting_for_credits` if it has been queued but cannot proceed until credits are available.
+
 ### 5) Auto Campaign Configuration
 
 - Route: `/auto-campaigns`
@@ -282,6 +288,38 @@ The repo includes `app/api/README.md` marking these as deprecated; treat that fi
 
 - Route: `/settings`
 - Updates org configuration and service toggles using `apiClient()`.
+
+### 9) Credits
+
+User UI:
+
+- Route: `/dashboard`
+- Displays live WhatsApp credits (utility + marketing) via the Next.js proxy route `GET /api/credits/me`.
+
+Campaign Runs UI:
+
+- Route: `/campaigns` (Campaign Runs list/dialog)
+- Before scheduling a run, the UI calls `GET /api/campaign-runs/[id]/credits/precheck`.
+- If precheck indicates insufficient credits, scheduling is blocked client-side.
+- If backend still returns `409` with `code=INSUFFICIENT_CREDITS`, the UI surfaces the returned details.
+
+Admin UI:
+
+- Org list: `/admin/orgs`
+  - Source of truth: `GET /api/admin/whatsapp/orgs` (includes WhatsApp config + credits summary).
+- Org credits: `/admin/orgs/[orgId]/credits`
+  - Balances: `GET /api/admin/org/[orgId]/credits`
+  - Refill: `POST /api/admin/org/[orgId]/credits/refill`
+  - Ledger: `GET /api/admin/org/[orgId]/credits/ledger`
+
+Proxy routes involved:
+
+- `GET /api/credits/me`
+- `GET /api/campaign-runs/[id]/credits/precheck`
+- `GET /api/admin/whatsapp/orgs`
+- `GET /api/admin/org/[orgId]/credits`
+- `POST /api/admin/org/[orgId]/credits/refill`
+- `GET /api/admin/org/[orgId]/credits/ledger`
 
 ## State Management
 

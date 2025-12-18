@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Info,
   TrendingUp,
@@ -24,6 +23,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { getAuthToken } from "@/lib/auth";
 import {
   fetchDashboardOverview,
   fetchSegmentCounts,
@@ -31,12 +31,15 @@ import {
 } from "@/lib/api";
 import type { DashboardOverview, SegmentCounts } from "@/lib/types/campaign";
 import type { POSCustomer } from "@/lib/types/pos";
+import type { CreditsMeResponse, CreditsState } from "@/lib/types/credits";
 
 export default function DashboardPage() {
   const { orgName } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+  const [credits, setCredits] = useState<CreditsState | null>(null);
+  const [creditsError, setCreditsError] = useState<string | null>(null);
+
   // Analytics state - using new API types
   const [dashboardOverview, setDashboardOverview] = useState<DashboardOverview | null>(null);
   const [segmentCounts, setSegmentCounts] = useState<SegmentCounts | null>(null);
@@ -49,19 +52,43 @@ export default function DashboardPage() {
   async function loadDashboardData() {
     setLoading(true);
     setError(null);
+    setCreditsError(null);
 
     try {
+      const creditsPromise = (async () => {
+        const token = getAuthToken();
+        if (!token) {
+          throw new Error("Unauthorized");
+        }
+
+        const res = await fetch("/api/credits/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok) {
+          throw new Error(data?.error || data?.message || "Failed to fetch credits");
+        }
+
+        const parsed = data as CreditsMeResponse;
+        return parsed.data;
+      })();
+
       // Fetch all data in parallel using new API endpoints
-      const [overviewData, segmentsData, customersData] = await Promise.allSettled([
+      const [overviewData, segmentsData, customersData, creditsData] = await Promise.allSettled([
         fetchDashboardOverview(),
         fetchSegmentCounts(),
         fetchCustomers({ limit: 10, sortBy: 'lastVisitAt', sortOrder: 'desc' }),
+        creditsPromise,
       ]);
 
       if (overviewData.status === 'fulfilled') {
         setDashboardOverview(overviewData.value);
       }
-      
+
       if (segmentsData.status === 'fulfilled') {
         setSegmentCounts(segmentsData.value);
       }
@@ -70,7 +97,7 @@ export default function DashboardPage() {
         // Filter customers with birthdays in next 30 days
         const today = new Date();
         const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-        
+
         const withUpcomingBirthdays = customersData.value.customers.filter(customer => {
           if (!customer.dateOfBirth) return false;
           const bday = new Date(customer.dateOfBirth);
@@ -80,12 +107,21 @@ export default function DashboardPage() {
           }
           return thisYearBday >= today && thisYearBday <= thirtyDaysFromNow;
         });
-        
+
         setUpcomingBirthdays(withUpcomingBirthdays.slice(0, 5));
+      }
+
+      if (creditsData.status === 'fulfilled') {
+        setCredits(creditsData.value);
+      } else {
+        setCredits(null);
+        setCreditsError(creditsData.reason instanceof Error ? creditsData.reason.message : "Failed to fetch credits");
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       setError('Failed to load dashboard data. Using sample data.');
+      setCredits(null);
+      setCreditsError(err instanceof Error ? err.message : "Failed to fetch credits");
     } finally {
       setLoading(false);
     }
@@ -94,7 +130,7 @@ export default function DashboardPage() {
   // Derived stats with fallbacks - using new API structure
   // Using segmentCounts for customer breakdown and dashboardOverview for campaign/message stats
   const total = segmentCounts?.total || dashboardOverview?.customers.total || 0;
-  
+
   const frequencyStats = dashboardOverview ? [
     { label: "Active Customers", value: dashboardOverview.customers.active, percent: total > 0 ? (dashboardOverview.customers.active / total) * 100 : 0 },
     { label: "New Customers", value: dashboardOverview.customers.new, percent: total > 0 ? (dashboardOverview.customers.new / total) * 100 : 0 },
@@ -180,49 +216,6 @@ export default function DashboardPage() {
   // Top customers from segment data (VIP + Loyal)
   const vipCount = dashboardOverview?.customers.vip || segmentCounts?.frequency.vip || 0;
   const loyalCount = dashboardOverview?.customers.loyal || segmentCounts?.frequency.loyal || 0;
-
-  const creditPackages = [
-    {
-      channel: "SMS",
-      accent: "#ffeeda",
-      options: [
-        { label: "25K", price: "₹5000" },
-        { label: "50K", price: "₹10000" },
-        { label: "100K", price: "₹20000" },
-      ],
-      customPrice: "₹0.000",
-    },
-    {
-      channel: "Email",
-      accent: "#fff4e6",
-      options: [
-        { label: "25K", price: "₹3000" },
-        { label: "50K", price: "₹6000" },
-        { label: "100K", price: "₹12000" },
-      ],
-      customPrice: "₹0.000",
-    },
-    {
-      channel: "Whatsapp Utility",
-      accent: "#fff8ec",
-      options: [
-        { label: "25K", price: "₹5000" },
-        { label: "50K", price: "₹10000" },
-        { label: "100K", price: "₹20000" },
-      ],
-      customPrice: "₹0.000",
-    },
-    {
-      channel: "Whatsapp Marketing",
-      accent: "#fff0e6",
-      options: [
-        { label: "25K", price: "₹23500" },
-        { label: "50K", price: "₹47000" },
-        { label: "100K", price: "₹94000" },
-      ],
-      customPrice: "₹0.000",
-    },
-  ];
 
   if (loading) {
     return (
@@ -546,120 +539,55 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Credit Refill */}
-      <section className="space-y-6">
-        <Card className="shadow-sm">
-          <CardHeader className="border-b border-gray-100">
-            <div className="flex flex-col gap-2">
-              <CardTitle className="text-2xl font-semibold">
-                Refill your credits to reach your customers.
-              </CardTitle>
-              <CardDescription>
-                Choose a pack per channel or enter a custom quantity. These are static placeholders until billing APIs go live.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-6">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {creditPackages.map((pack) => (
-                <div
-                  key={pack.channel}
-                  className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
-                  style={{ backgroundColor: pack.accent }}
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Channel</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {pack.channel}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs uppercase text-gray-500">
-                      On
-                      <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-[var(--connectnow-accent)]/30">
-                        <span className="inline-block h-4 w-4 translate-x-4 rounded-full bg-white shadow" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {pack.options.map((option, idx) => (
-                      <label
-                        key={option.label}
-                        className="flex items-center justify-between rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-medium shadow-sm"
-                      >
-                        <span className="flex items-center gap-2 text-gray-600">
-                          <input
-                            type="radio"
-                            name={`pack-${pack.channel}`}
-                            defaultChecked={idx === 0}
-                            className="accent-[var(--connectnow-accent-strong)]"
-                          />
-                          {option.label}
-                        </span>
-                        <span className="text-[var(--connectnow-accent-strong)]">
-                          {option.price}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between text-sm font-medium text-gray-600">
-                      <span>Custom</span>
-                      <span className="text-[var(--connectnow-accent-strong)]">
-                        {pack.customPrice}
-                      </span>
-                    </div>
-                    <Input
-                      placeholder="Enter number of credits"
-                      className="bg-white text-sm"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col gap-3 border-t border-dashed border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Total</p>
-                <p className="text-2xl font-semibold text-[var(--connectnow-accent-strong)]">
-                  ₹0.000
-                </p>
-                <p className="text-xs text-gray-400">Price excludes GST</p>
-              </div>
-              <Button
-                className="gap-2 bg-[var(--connectnow-accent-strong)] hover:bg-[var(--connectnow-accent)]"
-                disabled
-              >
-                <MessageCircle className="h-4 w-4" />
-                Proceed to checkout
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {/* WhatsApp Credits */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">WhatsApp Credits</h2>
+            <p className="text-sm text-gray-600">Live available credits used for campaign sending.</p>
+          </div>
+          <Button variant="outline" onClick={loadDashboardData}>
+            Refresh
+          </Button>
+        </div>
 
-        <Card className="flex flex-col gap-4 rounded-3xl border-dashed border-[var(--connectnow-accent-strong)]/40 bg-[var(--connectnow-accent-soft)] p-6 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-3">
-            <Badge className="w-fit bg-white text-[var(--connectnow-accent-strong)]">
-              NEW
-            </Badge>
-            <div>
-              <h3 className="text-2xl font-semibold text-gray-900">
-                Now automatically refill credits whenever it gets low.
-              </h3>
-              <p className="text-gray-600">
-                Enable autopay once and we’ll top up every channel based on your preferred threshold.
+        {creditsError && (
+          <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-md" role="alert">
+            {creditsError}
+          </p>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Utility (available)</CardTitle>
+              <MessageCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(credits?.available.utility ?? 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Balance {(credits?.balances.utility ?? 0).toLocaleString()} • Reserved {(credits?.reserved.utility ?? 0).toLocaleString()}
               </p>
-            </div>
-            <Button variant="link" className="px-0 text-[var(--connectnow-accent-strong)]">
-              Set-up Autopay
-            </Button>
-          </div>
-          <div className="flex flex-1 justify-end">
-            <div className="h-24 w-36 rounded-2xl border border-dotted border-[var(--connectnow-accent-strong)]/40 bg-white/80 text-center text-sm text-gray-500 flex flex-col items-center justify-center">
-              <RefreshCcw className="mb-2 h-6 w-6 text-[var(--connectnow-accent-strong)]" />
-              Auto top-ups preview
-            </div>
-          </div>
-        </Card>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Marketing (available)</CardTitle>
+              <Megaphone className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(credits?.available.marketing ?? 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Balance {(credits?.balances.marketing ?? 0).toLocaleString()} • Reserved {(credits?.reserved.marketing ?? 0).toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       </section>
     </div>
   );

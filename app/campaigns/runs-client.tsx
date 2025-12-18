@@ -37,6 +37,8 @@ function statusBadgeVariant(status: CampaignRunStatus) {
     switch (status) {
         case "scheduled":
             return "outline" as const;
+        case "waiting_for_credits":
+            return "outline" as const;
         case "running":
             return "default" as const;
         case "completed":
@@ -51,12 +53,54 @@ function statusBadgeVariant(status: CampaignRunStatus) {
     }
 }
 
+function statusLabel(status: CampaignRunStatus): string {
+    switch (status) {
+        case "waiting_for_credits":
+            return "Waiting for credits";
+        default:
+            return status;
+    }
+}
+
+function formatInsufficientCreditsMessage(input: {
+    bucket?: string;
+    creditsRequired?: number;
+    creditsAvailable?: number;
+    eligibleCount?: number;
+    throttledCount?: number;
+    error?: string;
+}): string {
+    const bucket = input.bucket || "credits";
+    const required = typeof input.creditsRequired === "number" ? input.creditsRequired : undefined;
+    const available = typeof input.creditsAvailable === "number" ? input.creditsAvailable : undefined;
+    const eligibleCount = typeof input.eligibleCount === "number" ? input.eligibleCount : undefined;
+    const throttledCount = typeof input.throttledCount === "number" ? input.throttledCount : undefined;
+
+    const parts: string[] = [];
+    if (typeof required === "number" && typeof available === "number") {
+        parts.push(`Insufficient ${bucket} credits: required ${required}, available ${available}.`);
+    } else {
+        parts.push(input.error || `Insufficient ${bucket} credits.`);
+    }
+
+    if (typeof eligibleCount === "number") {
+        parts.push(`Eligible recipients: ${eligibleCount}.`);
+    }
+    if (typeof throttledCount === "number" && throttledCount > 0) {
+        parts.push(`Throttled (24h): ${throttledCount}.`);
+    }
+
+    return parts.join(" ");
+}
+
 function statusIcon(status: CampaignRunStatus) {
     switch (status) {
         case "draft":
             return <Clock className="h-4 w-4" />;
         case "scheduled":
             return <Calendar className="h-4 w-4" />;
+        case "waiting_for_credits":
+            return <Clock className="h-4 w-4" />;
         case "running":
             return <Loader2 className="h-4 w-4 animate-spin" />;
         case "completed":
@@ -77,6 +121,23 @@ async function parseJsonSafe(res: Response) {
     } catch {
         return text;
     }
+}
+
+async function fetchCreditsPrecheckOrThrow(runId: string, token: string) {
+    const precheckRes = await fetch(`/api/campaign-runs/${encodeURIComponent(runId)}/credits/precheck`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    const precheckJson = await parseJsonSafe(precheckRes);
+    if (!precheckRes.ok) {
+        const msg = (precheckJson as any)?.error || (precheckJson as any)?.message || "Failed to run credits precheck";
+        throw new Error(msg);
+    }
+
+    return (precheckJson as any)?.data as any;
 }
 
 export default function CampaignRunsClient() {
@@ -102,6 +163,10 @@ export default function CampaignRunsClient() {
     const [selectedRun, setSelectedRun] = useState<CampaignRun | null>(null);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
+    const [creditsPrecheck, setCreditsPrecheck] = useState<any | null>(null);
+    const [creditsPrecheckLoading, setCreditsPrecheckLoading] = useState(false);
+    const [creditsPrecheckError, setCreditsPrecheckError] = useState<string | null>(null);
+
     const [csvFile, setCsvFile] = useState<File | null>(null);
     const [csvUploading, setCsvUploading] = useState(false);
     const [csvResult, setCsvResult] = useState<UploadCsvAudienceResponse["data"] | null>(null);
@@ -120,6 +185,51 @@ export default function CampaignRunsClient() {
                 );
             });
     }, [runs, searchQuery, statusFilter]);
+
+    useEffect(() => {
+        const runId = selectedRun?._id;
+        if (!runId) {
+            setCreditsPrecheck(null);
+            setCreditsPrecheckError(null);
+            setCreditsPrecheckLoading(false);
+            return;
+        }
+
+        if (selectedRun?.status !== "draft") {
+            setCreditsPrecheck(null);
+            setCreditsPrecheckError(null);
+            setCreditsPrecheckLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        const run = async () => {
+            setCreditsPrecheck(null);
+            setCreditsPrecheckError(null);
+            setCreditsPrecheckLoading(true);
+            try {
+                const token = getAuthToken();
+                if (!token) throw new Error("Unauthorized");
+                const precheck = await fetchCreditsPrecheckOrThrow(runId, token);
+                if (!cancelled) {
+                    setCreditsPrecheck(precheck);
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    setCreditsPrecheckError(e instanceof Error ? e.message : "Failed to load credits precheck");
+                }
+            } finally {
+                if (!cancelled) {
+                    setCreditsPrecheckLoading(false);
+                }
+            }
+        };
+
+        run();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedRun?._id, selectedRun?.status]);
 
     const loadAll = async () => {
         setError(null);
@@ -260,6 +370,23 @@ export default function CampaignRunsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
+            if (action === "schedule") {
+                const precheck = await fetchCreditsPrecheckOrThrow(run._id, token);
+                setCreditsPrecheck(precheck);
+                if (precheck && precheck.isSufficient === false) {
+                    throw new Error(
+                        formatInsufficientCreditsMessage({
+                            bucket: precheck.bucket,
+                            creditsRequired: precheck.creditsRequired,
+                            creditsAvailable: precheck.creditsAvailable,
+                            eligibleCount: precheck.eligibleCount,
+                            throttledCount: precheck.throttledCount,
+                            error: undefined,
+                        })
+                    );
+                }
+            }
+
             const url =
                 action === "delete"
                     ? `/api/campaign-runs/${encodeURIComponent(run._id)}`
@@ -274,11 +401,29 @@ export default function CampaignRunsClient() {
 
             const data = await parseJsonSafe(res);
             if (!res.ok) {
+                if (res.status === 409 && (data as any)?.code === "INSUFFICIENT_CREDITS") {
+                    const d = (data as any)?.data || {};
+                    throw new Error(
+                        formatInsufficientCreditsMessage({
+                            bucket: d.bucket,
+                            creditsRequired: d.creditsRequired,
+                            creditsAvailable: d.creditsAvailable,
+                            eligibleCount: d.eligibleCount,
+                            throttledCount: d.throttledCount,
+                            error: (data as any)?.error,
+                        })
+                    );
+                }
+
                 const msg = (data as any)?.error || (data as any)?.message || `Failed to ${action}`;
                 throw new Error(msg);
             }
 
             await refreshRun(run._id);
+            if (action === "schedule") {
+                setCreditsPrecheck(null);
+                setCreditsPrecheckError(null);
+            }
             if (action === "delete") {
                 setSelectedRun(null);
                 setRuns((prev) => prev.filter((r) => r._id !== run._id));
@@ -380,6 +525,7 @@ export default function CampaignRunsClient() {
                                     />
                                 </div>
                             </div>
+
                             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
                                 <SelectTrigger className="w-[180px]">
                                     <SelectValue placeholder="Status" />
@@ -388,6 +534,7 @@ export default function CampaignRunsClient() {
                                     <SelectItem value="all">All Statuses</SelectItem>
                                     <SelectItem value="draft">Draft</SelectItem>
                                     <SelectItem value="scheduled">Scheduled</SelectItem>
+                                    <SelectItem value="waiting_for_credits">Waiting for credits</SelectItem>
                                     <SelectItem value="running">Running</SelectItem>
                                     <SelectItem value="completed">Completed</SelectItem>
                                     <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -443,7 +590,7 @@ export default function CampaignRunsClient() {
                                                 <Badge variant={statusBadgeVariant(r.status)} className="capitalize">
                                                     <span className="flex items-center gap-1">
                                                         {statusIcon(r.status)}
-                                                        <span>{r.status}</span>
+                                                        <span>{statusLabel(r.status)}</span>
                                                     </span>
                                                 </Badge>
                                             </TableCell>
@@ -456,7 +603,7 @@ export default function CampaignRunsClient() {
                                                             Schedule
                                                         </Button>
                                                     )}
-                                                    {(r.status === "draft" || r.status === "scheduled") && (
+                                                    {(r.status === "draft" || r.status === "scheduled" || r.status === "waiting_for_credits") && (
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
@@ -585,7 +732,7 @@ export default function CampaignRunsClient() {
                                     <Badge variant={statusBadgeVariant(selectedRun.status)} className="capitalize">
                                         <span className="flex items-center gap-1">
                                             {statusIcon(selectedRun.status)}
-                                            <span>{selectedRun.status}</span>
+                                            <span>{statusLabel(selectedRun.status)}</span>
                                         </span>
                                     </Badge>
                                 </div>
@@ -604,6 +751,53 @@ export default function CampaignRunsClient() {
                                         <div className="font-medium">{selectedRun.fireAt ? new Date(selectedRun.fireAt).toLocaleString() : "—"}</div>
                                     </div>
                                 </div>
+
+                                {selectedRun.status === "draft" && (
+                                    <div className="border-t pt-4">
+                                        <h4 className="font-medium mb-2">Credits Check</h4>
+
+                                        {creditsPrecheckLoading && (
+                                            <p className="text-sm text-muted-foreground" role="status">
+                                                Checking credits...
+                                            </p>
+                                        )}
+
+                                        {creditsPrecheckError && !creditsPrecheckLoading && (
+                                            <p className="text-sm text-destructive" role="alert">
+                                                {creditsPrecheckError}
+                                            </p>
+                                        )}
+
+                                        {creditsPrecheck && !creditsPrecheckLoading && !creditsPrecheckError && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                    <div className="text-gray-500">Bucket</div>
+                                                    <div className="font-medium capitalize">{creditsPrecheck.bucket}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Sufficient</div>
+                                                    <div className="font-medium">{String(Boolean(creditsPrecheck.isSufficient))}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Credits Required</div>
+                                                    <div className="font-medium">{Number(creditsPrecheck.creditsRequired || 0).toLocaleString()}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Credits Available</div>
+                                                    <div className="font-medium">{Number(creditsPrecheck.creditsAvailable || 0).toLocaleString()}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Eligible Count</div>
+                                                    <div className="font-medium">{Number(creditsPrecheck.eligibleCount || 0).toLocaleString()}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Throttled (24h)</div>
+                                                    <div className="font-medium">{Number(creditsPrecheck.throttledCount || 0).toLocaleString()}</div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="border-t pt-4">
                                     <h4 className="font-medium mb-2">Audience</h4>
@@ -686,14 +880,18 @@ export default function CampaignRunsClient() {
                                         </Button>
                                         <Button
                                             onClick={() => doAction(selectedRun, "schedule")}
-                                            disabled={actionLoadingId === selectedRun._id}
+                                            disabled={
+                                                actionLoadingId === selectedRun._id ||
+                                                creditsPrecheckLoading ||
+                                                (creditsPrecheck && creditsPrecheck.isSufficient === false)
+                                            }
                                         >
                                             Schedule
                                         </Button>
                                     </>
                                 )}
 
-                                {(selectedRun.status === "draft" || selectedRun.status === "scheduled") && (
+                                {(selectedRun.status === "draft" || selectedRun.status === "scheduled" || selectedRun.status === "waiting_for_credits") && (
                                     <Button
                                         variant="outline"
                                         className="text-red-600 hover:text-red-700"

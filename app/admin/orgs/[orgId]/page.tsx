@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { clearAuth, getAuthToken } from "@/lib/auth";
 import { setSelectedOrgId } from "@/lib/selected-org";
@@ -161,9 +162,19 @@ export default function AdminOrgDetailsPage() {
     return (
         <div className="min-h-screen bg-background">
             <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
-                <div>
-                    <h1 className="text-2xl font-semibold">Org: {orgId}</h1>
-                    <p className="text-sm text-muted-foreground">Manage WhatsApp configuration and status.</p>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-semibold">Org: {orgId}</h1>
+                        <p className="text-sm text-muted-foreground">Manage WhatsApp configuration and status.</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button variant="outline" asChild>
+                            <Link href="/admin/orgs">All orgs</Link>
+                        </Button>
+                        <Button variant="outline" asChild>
+                            <Link href={`/admin/orgs/${encodeURIComponent(orgId)}/credits`}>Credits</Link>
+                        </Button>
+                    </div>
                 </div>
 
                 {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
