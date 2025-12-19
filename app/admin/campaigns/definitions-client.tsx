@@ -577,15 +577,6 @@ export default function AdminCampaignDefinitionsClient() {
                             <Label>Category *</Label>
                             <Input value={form.templateCategory} disabled />
                         </div>
-
-                        <div className="space-y-2 md:col-span-2">
-                            <Label>componentsPreset (JSON array) *</Label>
-                            <Textarea
-                                value={form.componentsPresetJson}
-                                onChange={(e) => setForm((p) => ({ ...p, componentsPresetJson: e.target.value }))}
-                                className="font-mono text-xs min-h-[220px]"
-                            />
-                        </div>
                     </div>
 
                     <DialogFooter className="mt-6">
