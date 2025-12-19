@@ -575,19 +575,7 @@ export default function AdminCampaignDefinitionsClient() {
                         </div>
                         <div className="space-y-2">
                             <Label>Category *</Label>
-                            <Select
-                                value={form.templateCategory}
-                                onValueChange={(v) => setForm((p) => ({ ...p, templateCategory: v as WhatsAppTemplateCategory }))}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="MARKETING">MARKETING</SelectItem>
-                                    <SelectItem value="UTILITY">UTILITY</SelectItem>
-                                    <SelectItem value="AUTHENTICATION">AUTHENTICATION</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <Input value={form.templateCategory} disabled />
                         </div>
 
                         <div className="space-y-2 md:col-span-2">
