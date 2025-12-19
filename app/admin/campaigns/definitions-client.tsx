@@ -21,6 +21,11 @@ import type {
     WhatsAppTemplateCategory,
 } from "@/lib/types/campaign-definition";
 
+type TemplateVariable = {
+    index: number;
+    label: string;
+};
+
 type UpsertFormState = {
     key: string;
     name: string;
@@ -28,7 +33,8 @@ type UpsertFormState = {
     templateName: string;
     templateLanguage: string;
     templateCategory: WhatsAppTemplateCategory;
-    componentsPresetJson: string;
+    variables: TemplateVariable[];
+    sampleValues: Record<string, string>;
 };
 
 function defaultFormState(): UpsertFormState {
@@ -39,7 +45,8 @@ function defaultFormState(): UpsertFormState {
         templateName: "",
         templateLanguage: "en_US",
         templateCategory: "MARKETING",
-        componentsPresetJson: "[]",
+        variables: [],
+        sampleValues: {},
     };
 }
 
@@ -61,18 +68,6 @@ function safeJsonStringify(value: unknown) {
         return JSON.stringify(value ?? [], null, 2);
     } catch {
         return "[]";
-    }
-}
-
-function parseComponentsPreset(json: string): { ok: true; value: unknown[] } | { ok: false; error: string } {
-    try {
-        const parsed = JSON.parse(json);
-        if (!Array.isArray(parsed)) {
-            return { ok: false, error: "componentsPreset must be a JSON array" };
-        }
-        return { ok: true, value: parsed };
-    } catch {
-        return { ok: false, error: "componentsPreset must be valid JSON" };
     }
 }
 
@@ -229,7 +224,8 @@ export default function AdminCampaignDefinitionsClient() {
             templateName: d.template?.name || "",
             templateLanguage: d.template?.language || "en_US",
             templateCategory: (d.template?.category || "MARKETING") as WhatsAppTemplateCategory,
-            componentsPresetJson: safeJsonStringify(d.template?.componentsPreset || []),
+            variables: [],
+            sampleValues: d.template?.preview?.sampleValues || {},
         });
         setShowUpsert(true);
     };
@@ -242,37 +238,48 @@ export default function AdminCampaignDefinitionsClient() {
             return;
         }
 
-        const parsed = parseComponentsPreset(form.componentsPresetJson);
-        if (!parsed.ok) {
-            setError(parsed.error);
-            return;
-        }
-
         setSaving(true);
         try {
+            const selectedTemplate = templates.find(
+                (t) => t.name === form.templateName && t.language === form.templateLanguage
+            );
+
+            const components: any[] = (selectedTemplate as any)?.components || [];
+            const headerText = components.find(
+                (c) => c.type === "HEADER" && c.format === "TEXT" && typeof c.text === "string"
+            )?.text;
+            const bodyText = components.find(
+                (c) => c.type === "BODY" && typeof c.text === "string"
+            )?.text;
+            const footerText = components.find(
+                (c) => c.type === "FOOTER" && typeof c.text === "string"
+            )?.text;
+
+            const templatePayload: any = {
+                name: form.templateName.trim(),
+                language: form.templateLanguage.trim(),
+                category: form.templateCategory,
+                preview: {
+                    headerText,
+                    bodyText,
+                    footerText,
+                    sampleValues: form.sampleValues,
+                },
+            };
+
             const body: CreateCampaignDefinitionRequest | UpdateCampaignDefinitionRequest =
                 upsertMode === "create"
                     ? ({
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
-                        template: {
-                            name: form.templateName.trim(),
-                            language: form.templateLanguage.trim(),
-                            category: form.templateCategory,
-                            componentsPreset: parsed.value,
-                        },
+                        template: templatePayload,
                     } satisfies CreateCampaignDefinitionRequest)
                     : ({
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
-                        template: {
-                            name: form.templateName.trim(),
-                            language: form.templateLanguage.trim(),
-                            category: form.templateCategory,
-                            componentsPreset: parsed.value,
-                        },
+                        template: templatePayload,
                     } satisfies UpdateCampaignDefinitionRequest);
 
             const token = getAuthToken();
@@ -506,7 +513,8 @@ export default function AdminCampaignDefinitionsClient() {
                     <DialogHeader>
                         <DialogTitle>{upsertMode === "create" ? "New Campaign Definition" : "Edit Campaign Definition"}</DialogTitle>
                         <DialogDescription>
-                            The template preset is forwarded as-is to WhatsApp Cloud API. Provide valid media IDs in the preset.
+                            Select a WhatsApp template, configure sample values for its variables, and save a preview that will be shown in the
+                            campaign catalog.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -528,14 +536,47 @@ export default function AdminCampaignDefinitionsClient() {
                             <Label>Template Name *</Label>
                             <Select
                                 value={form.templateName}
-                                onValueChange={(v) => {
+                                onValueChange={async (v) => {
                                     const selected = templateOptions.find((t) => t.name === v);
+
                                     setForm((p) => ({
                                         ...p,
                                         templateName: v,
                                         templateLanguage: selected?.language || p.templateLanguage,
                                         templateCategory: (selected?.category as WhatsAppTemplateCategory) || p.templateCategory,
+                                        variables: [],
+                                        sampleValues: {},
                                     }));
+
+                                    try {
+                                        const token = getAuthToken();
+                                        const headers: Record<string, string> = { "Content-Type": "application/json" };
+                                        if (token) headers.Authorization = `Bearer ${token}`;
+
+                                        const res = await fetch("/api/templates/analyze", {
+                                            method: "POST",
+                                            headers,
+                                            body: JSON.stringify({ templateName: v }),
+                                        });
+
+                                        const data = await res.json().catch(() => null);
+                                        if (!res.ok || !data?.success) {
+                                            return;
+                                        }
+
+                                        const vars = (data.data?.variables || []) as TemplateVariable[];
+                                        setForm((p) => ({
+                                            ...p,
+                                            variables: vars,
+                                            sampleValues: vars.reduce<Record<string, string>>((acc, variable) => {
+                                                const key = String(variable.index);
+                                                acc[key] = p.sampleValues?.[key] || "";
+                                                return acc;
+                                            }, {}),
+                                        }));
+                                    } catch {
+                                        // best-effort; ignore analyze errors in UI
+                                    }
                                 }}
                                 disabled={templatesLoading || templateOptions.length === 0}
                             >
@@ -578,6 +619,42 @@ export default function AdminCampaignDefinitionsClient() {
                             <Input value={form.templateCategory} disabled />
                         </div>
                     </div>
+
+                    {form.variables.length > 0 && (
+                        <div className="mt-6 border-t pt-4 space-y-3">
+                            <h3 className="text-sm font-medium text-gray-900">Template Variables</h3>
+                            <p className="text-xs text-gray-500">
+                                Provide sample values for each variable. These will be used only for preview in the campaign catalog.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {form.variables.map((v) => {
+                                    const key = String(v.index);
+                                    return (
+                                        <div key={key} className="space-y-1">
+                                            <div className="text-xs font-medium text-gray-700">
+                                                Variable {v.index}
+                                                {v.label ? ` — ${v.label}` : ""}
+                                            </div>
+                                            <Input
+                                                placeholder="Sample value"
+                                                value={form.sampleValues[key] || ""}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setForm((p) => ({
+                                                        ...p,
+                                                        sampleValues: {
+                                                            ...p.sampleValues,
+                                                            [key]: value,
+                                                        },
+                                                    }));
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     <DialogFooter className="mt-6">
                         <Button variant="outline" onClick={() => setShowUpsert(false)} disabled={saving}>

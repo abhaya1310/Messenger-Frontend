@@ -2,11 +2,20 @@ export type CampaignDefinitionStatus = 'draft' | 'published' | 'archived';
 
 export type WhatsAppTemplateCategory = 'AUTHENTICATION' | 'MARKETING' | 'UTILITY';
 
+export interface CampaignDefinitionTemplatePreview {
+    headerText?: string;
+    bodyText?: string;
+    footerText?: string;
+    sampleValues?: Record<string, string>;
+    message?: string;
+}
+
 export interface CampaignDefinitionTemplate {
     name: string;
     language: string;
     category: WhatsAppTemplateCategory;
-    componentsPreset: unknown[];
+    componentsPreset?: unknown[];
+    preview?: CampaignDefinitionTemplatePreview;
 }
 
 export interface CampaignDefinition {
