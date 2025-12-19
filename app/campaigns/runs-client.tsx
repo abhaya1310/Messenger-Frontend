@@ -517,6 +517,64 @@ export default function CampaignRunsClient() {
                     </Card>
                 )}
 
+                {/* Campaign catalog (admin-created definitions) */}
+                <Card className="mb-6">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between gap-4">
+                        <div>
+                            <CardTitle className="text-base">Campaign Catalog</CardTitle>
+                            <CardDescription>Published campaigns configured by your admin.</CardDescription>
+                        </div>
+                        <Button size="sm" onClick={openCreateDialog} className="gap-1">
+                            <Megaphone className="h-4 w-4" />
+                            <span>New Run</span>
+                        </Button>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                        {definitions.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                                No published campaigns are available yet. Ask your admin to publish a campaign definition.
+                            </p>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {definitions.map((d) => {
+                                    const tmpl: any = d.template as any;
+                                    const previewMessage = tmpl?.preview?.message;
+                                    const category = tmpl?.category;
+                                    return (
+                                        <Card
+                                            key={d._id}
+                                            className="cursor-pointer hover:shadow-sm transition-shadow"
+                                            onClick={() => {
+                                                setCreateDefinitionId(d._id);
+                                                setShowCreate(true);
+                                            }}
+                                        >
+                                            <CardHeader className="pb-2 space-y-1">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <CardTitle className="text-base truncate">{d.name}</CardTitle>
+                                                        <CardDescription className="text-xs break-all">{d.key}</CardDescription>
+                                                    </div>
+                                                    {category && (
+                                                        <Badge variant="secondary" className="uppercase text-[10px] tracking-wide">
+                                                            {category}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </CardHeader>
+                                            <CardContent>
+                                                <p className="text-sm text-gray-700 line-clamp-3">
+                                                    {previewMessage || "Preview not configured"}
+                                                </p>
+                                            </CardContent>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
                 <Card className="mb-6">
                     <CardContent className="pt-6">
                         <div className="flex flex-wrap gap-4">
