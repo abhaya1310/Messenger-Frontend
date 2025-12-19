@@ -19,16 +19,19 @@ export default function AdminTemplatesPage() {
   const router = useRouter();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authIssue, setAuthIssue] = useState<null | { status: 401 | 403; message: string }>(null);
 
   const loadTemplates = async () => {
     setLoading(true);
     setError(null);
+    setAuthIssue(null);
     try {
       const token = getAuthToken();
       if (!token) {
@@ -123,12 +126,12 @@ export default function AdminTemplatesPage() {
 
   const handleRefresh = async () => {
     setError(null);
-    setLoading(true);
+    setAuthIssue(null);
+    setRefreshing(true);
     try {
       const token = getAuthToken();
       if (!token) {
-        clearAuth();
-        router.replace(`/login?next=${encodeURIComponent("/admin/templates")}`);
+        setAuthIssue({ status: 401, message: "Session expired. Please login again." });
         return;
       }
 
@@ -142,10 +145,14 @@ export default function AdminTemplatesPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 401) {
-          clearAuth();
-          router.replace(`/login?reason=session_expired&next=${encodeURIComponent("/admin/templates")}`);
+          setAuthIssue({ status: 401, message: "Session expired. Please login again." });
           return;
         }
+        if (res.status === 403) {
+          setAuthIssue({ status: 403, message: "Forbidden: admin access required." });
+          return;
+        }
+
         const msg = (data as any)?.error || (data as any)?.message || "Failed to refresh templates";
         throw new Error(msg);
       }
@@ -154,7 +161,7 @@ export default function AdminTemplatesPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to refresh templates");
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -192,13 +199,40 @@ export default function AdminTemplatesPage() {
                 )}
               </p>
             </div>
-            <Button onClick={handleRefresh} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-              Refresh Templates
+            <Button onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Refreshing…" : "Refresh Templates"}
             </Button>
           </div>
         </div>
       </header>
+
+      {(authIssue || error) && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div
+            className={`rounded-md border px-4 py-3 text-sm flex items-center justify-between gap-4 ${
+              authIssue
+                ? authIssue.status === 401
+                  ? "bg-amber-50 border-amber-200 text-amber-900"
+                  : "bg-red-50 border-red-200 text-red-900"
+                : "bg-red-50 border-red-200 text-red-900"
+            }`}
+            role="status"
+          >
+            <div>
+              {authIssue ? authIssue.message : error}
+            </div>
+            {authIssue?.status === 401 && (
+              <Button
+                variant="outline"
+                onClick={() => router.push(`/login?next=${encodeURIComponent("/admin/templates")}`)}
+              >
+                Go to login
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Breadcrumb items={[{ label: "Admin", href: "/admin" }, { label: "Templates" }]} />
