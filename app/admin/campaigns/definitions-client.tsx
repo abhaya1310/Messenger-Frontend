@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Megaphone, Plus, RefreshCw, Search, Trash2, UploadCloud } from "lucide-react";
 import { getAuthToken } from "@/lib/auth";
+import type { Template } from "@/lib/api";
 import type {
     CampaignDefinition,
     CampaignDefinitionStatus,
@@ -81,6 +82,10 @@ export default function AdminCampaignDefinitionsClient() {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const [templates, setTemplates] = useState<Template[]>([]);
+    const [templatesLoading, setTemplatesLoading] = useState(false);
+    const [templatesError, setTemplatesError] = useState<string | null>(null);
+
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<CampaignDefinitionStatus | "all">("all");
 
@@ -91,6 +96,30 @@ export default function AdminCampaignDefinitionsClient() {
     const [saving, setSaving] = useState(false);
 
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+    const templateOptions = useMemo(() => {
+        const approved = templates.filter((t) => t.status === "APPROVED");
+        const base = (approved.length > 0 ? approved : templates)
+            .slice()
+            .sort((a, b) => `${a.category}:${a.name}`.localeCompare(`${b.category}:${b.name}`));
+
+        const current = form.templateName.trim();
+        if (!current) return base.map((t) => ({ name: t.name, category: t.category, language: t.language }));
+
+        const exists = base.some((t) => t.name === current);
+        const out = exists
+            ? base
+            : [
+                {
+                    name: current,
+                    category: form.templateCategory,
+                    language: form.templateLanguage,
+                } as unknown as Template,
+                ...base,
+            ];
+
+        return out.map((t) => ({ name: t.name, category: t.category, language: t.language }));
+    }, [templates, form.templateName, form.templateCategory, form.templateLanguage]);
 
     const filtered = useMemo(() => {
         return definitions
@@ -132,10 +161,50 @@ export default function AdminCampaignDefinitionsClient() {
         }
     };
 
+    const loadTemplates = async () => {
+        setTemplatesError(null);
+        setTemplatesLoading(true);
+        try {
+            const token = getAuthToken();
+            const res = await fetch("/api/templates?limit=200", {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                if (res.status === 401) {
+                    setTemplatesError("Session expired (401). Please login again.");
+                    setTemplates([]);
+                    return;
+                }
+                if (res.status === 403) {
+                    setTemplatesError("Forbidden (403): admin access required.");
+                    setTemplates([]);
+                    return;
+                }
+
+                const message = (data as any)?.error || (data as any)?.message || "Failed to load templates";
+                throw new Error(message);
+            }
+
+            setTemplates((((data as any)?.data || []) as Template[]) ?? []);
+        } catch (e) {
+            setTemplates([]);
+            setTemplatesError(e instanceof Error ? e.message : "Failed to load templates");
+        } finally {
+            setTemplatesLoading(false);
+        }
+    };
+
     useEffect(() => {
         load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter]);
+
+    useEffect(() => {
+        loadTemplates();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -457,11 +526,44 @@ export default function AdminCampaignDefinitionsClient() {
 
                         <div className="space-y-2">
                             <Label>Template Name *</Label>
-                            <Input
+                            <Select
                                 value={form.templateName}
-                                onChange={(e) => setForm((p) => ({ ...p, templateName: e.target.value }))}
-                                placeholder="e.g. summer_promo_v1"
-                            />
+                                onValueChange={(v) => {
+                                    const selected = templateOptions.find((t) => t.name === v);
+                                    setForm((p) => ({
+                                        ...p,
+                                        templateName: v,
+                                        templateLanguage: selected?.language || p.templateLanguage,
+                                        templateCategory: (selected?.category as WhatsAppTemplateCategory) || p.templateCategory,
+                                    }));
+                                }}
+                                disabled={templatesLoading || templateOptions.length === 0}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue
+                                        placeholder={
+                                            templatesLoading
+                                                ? "Loading templates..."
+                                                : templateOptions.length === 0
+                                                    ? "No templates available"
+                                                    : "Select a template"
+                                        }
+                                    />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {templateOptions.map((t) => (
+                                        <SelectItem key={`${t.name}:${t.language}:${t.category}`} value={t.name}>
+                                            {t.name} — {t.category}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            {templatesError && (
+                                <p className="text-sm text-destructive" role="alert">
+                                    {templatesError}
+                                </p>
+                            )}
                         </div>
                         <div className="space-y-2">
                             <Label>Template Language *</Label>
