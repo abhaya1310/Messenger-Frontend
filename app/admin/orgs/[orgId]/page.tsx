@@ -46,6 +46,11 @@ export default function AdminOrgDetailsPage() {
     const [saveError, setSaveError] = useState<string | null>(null);
     const [saveOk, setSaveOk] = useState<string | null>(null);
 
+    const [accessEmail, setAccessEmail] = useState("");
+    const [generatingAccessCode, setGeneratingAccessCode] = useState(false);
+    const [accessError, setAccessError] = useState<string | null>(null);
+    const [accessResult, setAccessResult] = useState<{ accessCode: string; expiresAt?: string; email?: string } | null>(null);
+
     const load = async () => {
         setLoading(true);
         setError(null);
@@ -91,6 +96,112 @@ export default function AdminOrgDetailsPage() {
             setLoading(false);
         }
     };
+
+    const onGenerateAccessCode = async (e: FormEvent) => {
+        e.preventDefault();
+        setAccessError(null);
+        setAccessResult(null);
+        setGeneratingAccessCode(true);
+
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                setAccessError("Not authenticated. Please login again.");
+                return;
+            }
+
+            const email = accessEmail.trim();
+            if (!email) {
+                setAccessError("Email is required");
+                return;
+            }
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/user`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ email }),
+            });
+
+            const text = await res.text();
+            let data: any = undefined;
+            try {
+                data = text ? JSON.parse(text) : undefined;
+            } catch {
+                data = text;
+            }
+
+            if (!res.ok) {
+                const backendErrorCode =
+                    typeof data === "string"
+                        ? undefined
+                        : typeof data?.error === "string"
+                            ? data.error
+                            : undefined;
+
+                const backendMessage =
+                    typeof data === "string"
+                        ? data
+                        : typeof data?.message === "string"
+                            ? data.message
+                            : undefined;
+
+                if (res.status === 401) {
+                    setAccessError("Session expired (401). Please login again.");
+                    return;
+                }
+                if (res.status === 403) {
+                    setAccessError("Forbidden (403): admin access required.");
+                    return;
+                }
+                if (res.status === 409 && backendErrorCode === "email_in_use") {
+                    setAccessError("Email already in use");
+                    return;
+                }
+                if (res.status === 409 && backendErrorCode === "org_user_exists") {
+                    setAccessError("Org user already exists; use reset/reissue");
+                    return;
+                }
+                if (res.status === 500 && backendErrorCode === "registration_code_pepper_not_configured") {
+                    setAccessError("Server config missing; contact backend team");
+                    return;
+                }
+
+                setAccessError(
+                    `Failed to generate access code (${res.status}${res.statusText ? ` ${res.statusText}` : ""})` +
+                    (backendErrorCode ? `: ${backendErrorCode}` : backendMessage ? `: ${backendMessage}` : "")
+                );
+                return;
+            }
+
+            const payload = (data as any)?.data;
+            const accessCode = payload?.accessCode;
+            if (typeof accessCode !== "string" || !accessCode) {
+                setAccessError("Access code was not returned by server");
+                return;
+            }
+
+            setAccessResult({
+                accessCode,
+                expiresAt: typeof payload?.expiresAt === "string" ? payload.expiresAt : undefined,
+                email: typeof payload?.email === "string" ? payload.email : email,
+            });
+        } catch (err) {
+            setAccessError(err instanceof Error ? `Network error: ${err.message}` : "Network error");
+        } finally {
+            setGeneratingAccessCode(false);
+        }
+    };
+
+    const expiresAtLabel = accessResult?.expiresAt
+        ? (() => {
+            const date = new Date(accessResult.expiresAt);
+            if (Number.isNaN(date.getTime())) return accessResult.expiresAt;
+            return date.toLocaleString();
+        })()
+        : null;
 
     useEffect(() => {
         setSelectedOrgId(orgId);
@@ -186,6 +297,53 @@ export default function AdminOrgDetailsPage() {
 
                 {org && (
                     <>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Access Code</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={onGenerateAccessCode} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="accessEmail">Email</Label>
+                                        <Input
+                                            id="accessEmail"
+                                            value={accessEmail}
+                                            onChange={(e) => setAccessEmail(e.target.value)}
+                                            placeholder="user@clientabc.com"
+                                            type="email"
+                                            required
+                                        />
+                                    </div>
+
+                                    {accessError && (
+                                        <p className="text-sm text-destructive" role="alert">
+                                            {accessError}
+                                        </p>
+                                    )}
+
+                                    {accessResult && !accessError && (
+                                        <div className="rounded-md border p-4 space-y-2">
+                                            <p className="text-sm">
+                                                Access code for <span className="font-medium">{accessResult.email || accessEmail}</span>
+                                            </p>
+                                            {expiresAtLabel ? (
+                                                <p className="text-sm text-muted-foreground">
+                                                    Expires at: <span className="font-medium">{expiresAtLabel}</span>
+                                                </p>
+                                            ) : null}
+                                            <Input value={accessResult.accessCode} readOnly />
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-end">
+                                        <Button type="submit" disabled={generatingAccessCode}>
+                                            {generatingAccessCode ? "Generating..." : "Generate access code"}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
+
                         <Card>
                             <CardHeader>
                                 <CardTitle>WhatsApp Status</CardTitle>
