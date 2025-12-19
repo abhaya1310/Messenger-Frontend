@@ -127,7 +127,13 @@ export default function AdminOrgsListPage() {
                 },
             });
 
-            const data = (await res.json().catch(() => ({}))) as any;
+            const text = await res.text();
+            let data: any = undefined;
+            try {
+                data = text ? JSON.parse(text) : undefined;
+            } catch {
+                data = text;
+            }
 
             if (!res.ok) {
                 if (res.status === 401) {
@@ -136,12 +142,25 @@ export default function AdminOrgsListPage() {
                     return;
                 }
                 if (res.status === 403) {
-                    setError("Admin access required");
+                    setError("Admin access required (403)");
                     setOrgs([]);
                     setPagination(null);
                     return;
                 }
-                setError(data?.error || "Failed to fetch orgs");
+
+                const backendMessage =
+                    typeof data === "string"
+                        ? data
+                        : typeof data?.error === "string"
+                            ? data.error
+                            : typeof data?.message === "string"
+                                ? data.message
+                                : undefined;
+
+                setError(
+                    `Failed to fetch orgs (${res.status}${res.statusText ? ` ${res.statusText}` : ""})` +
+                    (backendMessage ? `: ${backendMessage}` : "")
+                );
                 setOrgs([]);
                 setPagination(null);
                 return;
@@ -151,7 +170,7 @@ export default function AdminOrgsListPage() {
             setOrgs(Array.isArray(parsed?.data?.items) ? parsed.data.items : []);
             setPagination(parsed?.data?.pagination || null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to fetch orgs");
+            setError(err instanceof Error ? `Network error: ${err.message}` : "Network error");
             setOrgs([]);
             setPagination(null);
         } finally {
