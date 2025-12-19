@@ -29,7 +29,7 @@ export function AdminHeader() {
         <div className="w-full border-b bg-background">
             <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-4">
-                    <Link href="/admin/orgs/new" className="font-semibold">
+                    <Link href="/admin" className="font-semibold">
                         Admin Console
                     </Link>
                     <Link href="/admin/orgs/new" className={linkClass("/admin/orgs/new")}>

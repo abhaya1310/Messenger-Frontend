@@ -120,7 +120,9 @@ export function AdminSidebar() {
                 >
                     <div className="flex flex-col h-full">
                         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                            <h2 className="text-lg font-semibold text-gray-900">Admin Console</h2>
+                            <Link href="/admin" onClick={closeMobile} className="text-lg font-semibold text-gray-900">
+                                Admin Console
+                            </Link>
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -187,7 +189,9 @@ export function AdminSidebar() {
                     )}
                 >
                     {!isCollapsed && (
-                        <h2 className="text-lg font-semibold text-gray-900">Admin Console</h2>
+                        <Link href="/admin" className="text-lg font-semibold text-gray-900">
+                            Admin Console
+                        </Link>
                     )}
                     <Button
                         variant="ghost"
