@@ -77,6 +77,8 @@ export default function AdminCampaignDefinitionsClient() {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+
     const [templates, setTemplates] = useState<Template[]>([]);
     const [templatesLoading, setTemplatesLoading] = useState(false);
     const [templatesError, setTemplatesError] = useState<string | null>(null);
@@ -207,16 +209,23 @@ export default function AdminCampaignDefinitionsClient() {
         setRefreshing(false);
     };
 
+    const extractAnalyzeVariables = (payload: any): TemplateVariable[] => {
+        const vars = payload?.data?.variables ?? payload?.variables;
+        return Array.isArray(vars) ? (vars as TemplateVariable[]) : [];
+    };
+
     const openCreate = () => {
         setUpsertMode("create");
         setActiveId(null);
         setForm(defaultFormState());
+        setAnalyzeError(null);
         setShowUpsert(true);
     };
 
     const openEdit = async (d: CampaignDefinition) => {
         setUpsertMode("edit");
         setActiveId(d._id);
+        setAnalyzeError(null);
 
         const baseForm: UpsertFormState = {
             key: d.key,
@@ -248,11 +257,21 @@ export default function AdminCampaignDefinitionsClient() {
             });
 
             const data = await res.json().catch(() => null);
-            if (!res.ok || !data?.success) {
+            if (!res.ok || !data) {
+                console.error("/api/templates/analyze failed", { status: res.status, data });
+                setAnalyzeError("Failed to analyze template variables.");
+                return;
+            }
+            if (!data?.success) {
+                console.error("/api/templates/analyze returned success=false", data);
+                setAnalyzeError((data as any)?.error || (data as any)?.message || "Failed to analyze template variables.");
                 return;
             }
 
-            const vars = (data.data?.variables || []) as TemplateVariable[];
+            const vars = extractAnalyzeVariables(data);
+            if (vars.length === 0) {
+                setAnalyzeError("No variables detected for this template.");
+            }
             setForm((p) => ({
                 ...p,
                 variables: vars,
@@ -263,7 +282,8 @@ export default function AdminCampaignDefinitionsClient() {
                 }, {}),
             }));
         } catch {
-            // best-effort; ignore analyze errors in UI
+            console.error("/api/templates/analyze error");
+            setAnalyzeError("Failed to analyze template variables.");
         }
     };
 
@@ -601,6 +621,8 @@ export default function AdminCampaignDefinitionsClient() {
                                         sampleValues: {},
                                     }));
 
+                                    setAnalyzeError(null);
+
                                     try {
                                         const token = getAuthToken();
                                         const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -613,11 +635,23 @@ export default function AdminCampaignDefinitionsClient() {
                                         });
 
                                         const data = await res.json().catch(() => null);
-                                        if (!res.ok || !data?.success) {
+                                        if (!res.ok || !data) {
+                                            console.error("/api/templates/analyze failed", { status: res.status, data });
+                                            setAnalyzeError("Failed to analyze template variables.");
+                                            return;
+                                        }
+                                        if (!data?.success) {
+                                            console.error("/api/templates/analyze returned success=false", data);
+                                            setAnalyzeError(
+                                                (data as any)?.error || (data as any)?.message || "Failed to analyze template variables."
+                                            );
                                             return;
                                         }
 
-                                        const vars = (data.data?.variables || []) as TemplateVariable[];
+                                        const vars = extractAnalyzeVariables(data);
+                                        if (vars.length === 0) {
+                                            setAnalyzeError("No variables detected for this template.");
+                                        }
                                         setForm((p) => ({
                                             ...p,
                                             variables: vars,
@@ -628,7 +662,8 @@ export default function AdminCampaignDefinitionsClient() {
                                             }, {}),
                                         }));
                                     } catch {
-                                        // best-effort; ignore analyze errors in UI
+                                        console.error("/api/templates/analyze error");
+                                        setAnalyzeError("Failed to analyze template variables.");
                                     }
                                 }}
                                 disabled={templatesLoading || templateOptions.length === 0}
@@ -656,6 +691,12 @@ export default function AdminCampaignDefinitionsClient() {
                             {templatesError && (
                                 <p className="text-sm text-destructive" role="alert">
                                     {templatesError}
+                                </p>
+                            )}
+
+                            {analyzeError && (
+                                <p className="text-sm text-destructive" role="alert">
+                                    {analyzeError}
                                 </p>
                             )}
                         </div>
