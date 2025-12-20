@@ -155,6 +155,7 @@ export default function CampaignRunsClient() {
     const [creating, setCreating] = useState(false);
 
     const [createDefinitionId, setCreateDefinitionId] = useState<string>("");
+    const [createTemplateParams, setCreateTemplateParams] = useState<Record<string, string>>({});
     const [createStartDate, setCreateStartDate] = useState<string>("");
     const [createEndDate, setCreateEndDate] = useState<string>("");
     const [createFireAt, setCreateFireAt] = useState<string>("");
@@ -294,6 +295,7 @@ export default function CampaignRunsClient() {
         setCreateAudienceSource("csv");
         setCsvFile(null);
         setCsvResult(null);
+        setCreateTemplateParams({});
         setShowCreate(true);
     };
 
@@ -333,6 +335,7 @@ export default function CampaignRunsClient() {
                     endDate: createEndDate,
                     fireAt: createFireAt,
                     audience: { source: createAudienceSource },
+                    templateParams: createTemplateParams,
                 }),
             });
 
@@ -718,7 +721,16 @@ export default function CampaignRunsClient() {
                         <TabsContent value="campaign" className="space-y-4 mt-4">
                             <div className="space-y-2">
                                 <Label>Campaign *</Label>
-                                <Select value={createDefinitionId} onValueChange={setCreateDefinitionId}>
+                                <Select
+                                    value={createDefinitionId}
+                                    onValueChange={(id) => {
+                                        setCreateDefinitionId(id);
+                                        const def = definitions.find((d) => d._id === id);
+                                        const tmpl: any = def?.template as any;
+                                        const samples = (tmpl?.preview?.sampleValues || {}) as Record<string, string>;
+                                        setCreateTemplateParams({ ...samples });
+                                    }}
+                                >
                                     <SelectTrigger>
                                         <SelectValue placeholder="Select a campaign" />
                                     </SelectTrigger>
@@ -731,6 +743,41 @@ export default function CampaignRunsClient() {
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {createDefinitionId && (() => {
+                                const def = definitions.find((d) => d._id === createDefinitionId);
+                                const tmpl: any = def?.template as any;
+                                const sampleValues = (tmpl?.preview?.sampleValues || {}) as Record<string, string>;
+                                const variableKeys = Object.keys(sampleValues);
+                                if (variableKeys.length === 0) return null;
+
+                                return (
+                                    <div className="space-y-2 border-t pt-4">
+                                        <Label className="text-sm">Template Parameters</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Override the template variable values to be used when this run sends messages.
+                                        </p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {variableKeys.map((k) => (
+                                                <div key={k} className="space-y-1">
+                                                    <div className="text-xs font-medium text-gray-700">Variable {k}</div>
+                                                    <Input
+                                                        value={createTemplateParams[k] ?? sampleValues[k] ?? ""}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value;
+                                                            setCreateTemplateParams((prev) => ({
+                                                                ...prev,
+                                                                [k]: value,
+                                                            }));
+                                                        }}
+                                                        placeholder={sampleValues[k]}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </TabsContent>
 
                         <TabsContent value="schedule" className="space-y-4 mt-4">

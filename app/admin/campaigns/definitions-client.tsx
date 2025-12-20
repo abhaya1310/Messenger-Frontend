@@ -314,7 +314,7 @@ export default function AdminCampaignDefinitionsClient() {
         }
     };
 
-    const doAction = async (d: CampaignDefinition, action: "publish" | "archive" | "delete") => {
+    const doAction = async (d: CampaignDefinition, action: "publish" | "unpublish" | "archive" | "delete") => {
         setError(null);
         setActionLoadingId(d._id);
         try {
@@ -472,15 +472,30 @@ export default function AdminCampaignDefinitionsClient() {
                                             >
                                                 Edit
                                             </Button>
-                                            <Button
-                                                size="sm"
-                                                onClick={() => doAction(d, "publish")}
-                                                disabled={d.status !== "draft" || busy}
-                                                className="gap-2"
-                                            >
-                                                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                                                Publish
-                                            </Button>
+
+                                            {d.status === "draft" && (
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => doAction(d, "publish")}
+                                                    disabled={busy}
+                                                    className="gap-2"
+                                                >
+                                                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                                                    Publish
+                                                </Button>
+                                            )}
+
+                                            {d.status === "published" && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => doAction(d, "unpublish")}
+                                                    disabled={busy}
+                                                >
+                                                    Unpublish
+                                                </Button>
+                                            )}
+
                                             <Button
                                                 variant="outline"
                                                 size="sm"
@@ -489,6 +504,7 @@ export default function AdminCampaignDefinitionsClient() {
                                             >
                                                 Archive
                                             </Button>
+
                                             <Button
                                                 variant="outline"
                                                 size="sm"

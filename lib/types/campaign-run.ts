@@ -2,6 +2,14 @@ export type CampaignRunStatus = 'draft' | 'scheduled' | 'waiting_for_credits' | 
 
 export type CampaignAudienceSource = 'csv' | 'pos';
 
+export interface CampaignDefinitionSummaryPreview {
+    headerText?: string;
+    bodyText?: string;
+    footerText?: string;
+    sampleValues?: Record<string, string>;
+    message?: string;
+}
+
 export interface CampaignDefinitionSummary {
     _id: string;
     key: string;
@@ -11,6 +19,7 @@ export interface CampaignDefinitionSummary {
         name: string;
         language?: string;
         category?: string;
+        preview?: CampaignDefinitionSummaryPreview;
     };
 }
 
@@ -74,6 +83,7 @@ export interface CreateCampaignRunRequest {
     audience: {
         source: CampaignAudienceSource;
     };
+    templateParams?: Record<string, string>;
 }
 
 export interface UpdateCampaignRunRequest {
@@ -83,6 +93,7 @@ export interface UpdateCampaignRunRequest {
     audience?: {
         source: CampaignAudienceSource;
     };
+    templateParams?: Record<string, string>;
 }
 
 export interface UploadCsvAudienceResponse {
