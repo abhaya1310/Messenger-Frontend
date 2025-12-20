@@ -48,6 +48,10 @@ This is a **Next.js 15** application built with:
 - **Campaigns**
   - Create and schedule campaigns (`/campaigns`).
   - Campaign run scheduling includes a credits precheck and can show `waiting_for_credits` when a run is queued but awaiting credit availability.
+  - Campaign catalog:
+    - Admins manage reusable campaign definitions at `/admin/campaigns`.
+    - Users pick from the catalog and create runs at `/campaigns`.
+    - Definitions store a template preview payload (`template.preview`) with sample values; the backend computes `template.preview.message`, which is shown on the user-facing catalog cards.
 - **Auto Campaign Settings**
   - Configure birthday/anniversary/first-visit/winback/festivals + utility messaging (`/auto-campaigns`).
 - **Analytics**
@@ -66,7 +70,7 @@ This is a **Next.js 15** application built with:
 - **`/admin/orgs/[orgId]`**: Org details + WhatsApp configuration (admin-only).
 - **`/admin/orgs/[orgId]/credits`**: Org credits balances + refill + ledger (admin-only).
 - **`/admin/templates`**: Admin templates browser (UI mirrors `/templates`).
-- **`/admin/campaigns`**: Admin campaigns UI (UI mirrors `/campaigns`).
+- **`/admin/campaigns`**: Admin campaign catalog (Campaign Definitions).
 - **`/onboarding`**: Access-code based account setup.
 - **`/privacy-policy`**: Public policy page.
 - **`/dashboard`**: Primary authenticated landing.
@@ -146,6 +150,31 @@ This repo also contains **Next.js route handlers** under `app/api/*` that proxy 
 - Multipart requests like `/api/media/upload` and `/api/campaign-runs/:id/audience/csv`
 
 They forward admin/user auth headers as needed.
+
+### Campaign Catalog (Definitions) + Runs
+
+The campaign catalog is built from **campaign definitions** created in the admin portal.
+
+- Admin definitions (proxy routes):
+  - `GET /api/admin/campaign-definitions`
+  - `POST /api/admin/campaign-definitions`
+  - `PATCH /api/admin/campaign-definitions/:id`
+  - `DELETE /api/admin/campaign-definitions/:id` (draft-only)
+  - `POST /api/admin/campaign-definitions/:id/publish`
+  - `POST /api/admin/campaign-definitions/:id/unpublish`
+  - `POST /api/admin/campaign-definitions/:id/archive`
+  - `POST /api/admin/campaign-definitions/:id/unarchive`
+
+- Template analysis + preview:
+  - Admin UI calls `POST /api/templates/analyze` when selecting a template.
+  - Admin UI renders one input per template variable index.
+  - On save, admin UI sends `template.preview` in the definition body:
+    - `headerText`, `bodyText`, `footerText`, `sampleValues`
+  - Backend computes and stores `template.preview.message` (authoritative preview string).
+
+- User catalog + run creation:
+  - `GET /api/campaign-runs/definitions` returns user-visible definitions.
+  - `POST /api/campaign-runs` creates a run (optionally including `templateParams` overrides).
 
 Credits-related proxy routes:
 

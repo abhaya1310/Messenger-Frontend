@@ -253,6 +253,31 @@ The repo includes `app/api/README.md` marking these as deprecated; treat that fi
 - Uses `lib/api.ts` campaign functions (via `apiClient()`)
 - Uses org + token headers when available
 
+#### Campaign Catalog (Definitions) lifecycle
+
+Admins manage reusable campaign definitions in `/admin/campaigns`.
+
+Lifecycle actions (via Next.js proxy routes under `app/api/admin/campaign-definitions/*`):
+
+- Create/update:
+  - `POST /api/admin/campaign-definitions`
+  - `PATCH /api/admin/campaign-definitions/:id`
+- Publish controls:
+  - `POST /api/admin/campaign-definitions/:id/publish` → `status: published`
+  - `POST /api/admin/campaign-definitions/:id/unpublish` → `status: draft`
+- Archive controls:
+  - `POST /api/admin/campaign-definitions/:id/archive` → `status: archived`
+  - `POST /api/admin/campaign-definitions/:id/unarchive` → `status: draft`
+
+Definitions are user-visible through `GET /api/campaign-runs/definitions` only when published.
+
+Template preview data flow:
+
+- Admin UI calls `POST /api/templates/analyze` to determine template variables.
+- Admin UI stores preview sample values in the definition payload:
+  - `template.preview.headerText`, `bodyText`, `footerText`, `sampleValues`
+- Backend computes `template.preview.message`, which is displayed in the user-facing campaign catalog cards.
+
 Credits gating:
 
 - Campaign run scheduling is protected by a server-authoritative credits system.
