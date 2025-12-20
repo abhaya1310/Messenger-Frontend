@@ -371,7 +371,7 @@ export default function AdminCampaignDefinitionsClient() {
         }
     };
 
-    const doAction = async (d: CampaignDefinition, action: "publish" | "unpublish" | "archive" | "delete") => {
+    const doAction = async (d: CampaignDefinition, action: "publish" | "unpublish" | "archive" | "unarchive" | "delete") => {
         setError(null);
         setActionLoadingId(d._id);
         try {
@@ -553,14 +553,25 @@ export default function AdminCampaignDefinitionsClient() {
                                                 </Button>
                                             )}
 
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => doAction(d, "archive")}
-                                                disabled={d.status === "archived" || busy}
-                                            >
-                                                Archive
-                                            </Button>
+                                            {d.status === "archived" ? (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => doAction(d, "unarchive")}
+                                                    disabled={busy}
+                                                >
+                                                    Unarchive
+                                                </Button>
+                                            ) : (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => doAction(d, "archive")}
+                                                    disabled={busy}
+                                                >
+                                                    Archive
+                                                </Button>
+                                            )}
 
                                             <Button
                                                 variant="outline"
