@@ -214,20 +214,57 @@ export default function AdminCampaignDefinitionsClient() {
         setShowUpsert(true);
     };
 
-    const openEdit = (d: CampaignDefinition) => {
+    const openEdit = async (d: CampaignDefinition) => {
         setUpsertMode("edit");
         setActiveId(d._id);
-        setForm({
+
+        const baseForm: UpsertFormState = {
             key: d.key,
             name: d.name,
             description: d.description || "",
             templateName: d.template?.name || "",
             templateLanguage: d.template?.language || "en_US",
-            templateCategory: (d.template?.category || "MARKETING") as WhatsAppTemplateCategory,
+            templateCategory: d.template?.category || "MARKETING",
             variables: [],
             sampleValues: d.template?.preview?.sampleValues || {},
-        });
+        };
+
+        setForm(baseForm);
         setShowUpsert(true);
+
+        if (!baseForm.templateName) {
+            return;
+        }
+
+        try {
+            const token = getAuthToken();
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (token) headers.Authorization = `Bearer ${token}`;
+
+            const res = await fetch("/api/templates/analyze", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ templateName: baseForm.templateName }),
+            });
+
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data?.success) {
+                return;
+            }
+
+            const vars = (data.data?.variables || []) as TemplateVariable[];
+            setForm((p) => ({
+                ...p,
+                variables: vars,
+                sampleValues: vars.reduce<Record<string, string>>((acc, variable) => {
+                    const key = String(variable.index);
+                    acc[key] = p.sampleValues?.[key] || "";
+                    return acc;
+                }, {}),
+            }));
+        } catch {
+            // best-effort; ignore analyze errors in UI
+        }
     };
 
     const submitUpsert = async () => {
