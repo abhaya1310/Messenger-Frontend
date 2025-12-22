@@ -12,6 +12,7 @@ import {
     ChevronLeft,
     ChevronRight,
     UserPlus,
+    Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/sidebar-provider";
@@ -39,6 +40,11 @@ const navItems: NavItem[] = [
         title: "Campaigns",
         href: "/admin/campaigns",
         icon: Megaphone,
+    },
+    {
+        title: "Run Diagnostics",
+        href: "/admin/campaign-runs",
+        icon: Activity,
     },
 ];
 

@@ -63,6 +63,7 @@ export interface User {
 }
 
 export interface LoginRequest {
+  usernameOrEmail?: string;
   email?: string;
   username?: string;
   password: string;

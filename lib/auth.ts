@@ -48,15 +48,21 @@ export async function login(credentials: LoginCredentials): Promise<LoginRespons
     });
   };
 
-  const primaryBody = isEmail
-    ? ({ email: identifier, password: credentials.password } satisfies LoginRequest)
-    : ({ username: identifier, password: credentials.password } satisfies LoginRequest);
+  // New contract: { usernameOrEmail, password }
+  // Backward compatible fallbacks: { email, password } / { username, password }
+  let response = await attempt({ usernameOrEmail: identifier, password: credentials.password });
 
-  let response = await attempt(primaryBody);
+  if (!response.ok) {
+    const fallbackBody = isEmail
+      ? ({ email: identifier, password: credentials.password } satisfies LoginRequest)
+      : ({ username: identifier, password: credentials.password } satisfies LoginRequest);
+
+    response = await attempt(fallbackBody);
+  }
 
   if (!response.ok && response.status === 401 && !isEmail) {
-    const fallbackBody = ({ email: identifier, password: credentials.password } satisfies LoginRequest);
-    response = await attempt(fallbackBody);
+    const finalFallbackBody = ({ email: identifier, password: credentials.password } satisfies LoginRequest);
+    response = await attempt(finalFallbackBody);
   }
 
   if (!response.ok) {

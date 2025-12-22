@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 type OrgDetailsResponse = {
     success: boolean;
@@ -18,6 +19,10 @@ type OrgDetailsResponse = {
         timezone?: string;
         services?: Record<string, unknown>;
         features?: Record<string, unknown>;
+        abuseDetection?: {
+            enabled?: boolean;
+            maxOrdersPerDayPerPhone?: number;
+        };
         whatsapp?: {
             isConfigured?: boolean;
             model?: string;
@@ -27,6 +32,7 @@ type OrgDetailsResponse = {
             tokenStatus?: string;
             dedicated?: unknown;
         };
+
     };
 };
 
@@ -45,6 +51,12 @@ export default function AdminOrgDetailsPage() {
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const [saveOk, setSaveOk] = useState<string | null>(null);
+
+    const [abuseEnabled, setAbuseEnabled] = useState(false);
+    const [abuseMaxOrdersPerDay, setAbuseMaxOrdersPerDay] = useState<string>("");
+    const [abuseSaving, setAbuseSaving] = useState(false);
+    const [abuseError, setAbuseError] = useState<string | null>(null);
+    const [abuseOk, setAbuseOk] = useState<string | null>(null);
 
     const [accessEmail, setAccessEmail] = useState("");
     const [generatingAccessCode, setGeneratingAccessCode] = useState(false);
@@ -89,11 +101,79 @@ export default function AdminOrgDetailsPage() {
             setPhoneNumberId(parsed.data?.whatsapp?.phoneNumberId || "");
             setDisplayPhoneNumber(parsed.data?.whatsapp?.displayPhoneNumber || "");
             setDisplayName(parsed.data?.whatsapp?.displayName || "");
+
+            setAbuseEnabled(Boolean(parsed.data?.abuseDetection?.enabled));
+            setAbuseMaxOrdersPerDay(
+                typeof parsed.data?.abuseDetection?.maxOrdersPerDayPerPhone === "number"
+                    ? String(parsed.data.abuseDetection.maxOrdersPerDayPerPhone)
+                    : ""
+            );
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to fetch org");
             setOrg(null);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const onSaveAbuseDetection = async (e: FormEvent) => {
+        e.preventDefault();
+        setAbuseError(null);
+        setAbuseOk(null);
+        setAbuseSaving(true);
+
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                clearAuth();
+                router.replace(`/login?next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                return;
+            }
+
+            const maxOrdersRaw = abuseMaxOrdersPerDay.trim();
+            const maxOrders = maxOrdersRaw ? Number(maxOrdersRaw) : undefined;
+            if (maxOrdersRaw && (!Number.isFinite(maxOrders) || (maxOrders as number) <= 0 || !Number.isInteger(maxOrders))) {
+                setAbuseError("maxOrdersPerDayPerPhone must be a positive integer");
+                return;
+            }
+
+            const payload: Record<string, unknown> = {
+                enabled: abuseEnabled,
+            };
+            if (typeof maxOrders === "number") {
+                payload.maxOrdersPerDayPerPhone = maxOrders;
+            }
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/abuse-detection`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                if (res.status === 401) {
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    return;
+                }
+                if (res.status === 403) {
+                    setAbuseError("Admin access required");
+                    return;
+                }
+                setAbuseError(data?.error || data?.message || "Failed to update abuse detection");
+                return;
+            }
+
+            setAbuseOk("Abuse detection updated");
+            await load();
+        } catch (err) {
+            setAbuseError(err instanceof Error ? err.message : "Failed to update abuse detection");
+        } finally {
+            setAbuseSaving(false);
         }
     };
 
@@ -421,6 +501,55 @@ export default function AdminOrgDetailsPage() {
                                     <div className="flex justify-end">
                                         <Button type="submit" disabled={saving}>
                                             {saving ? "Saving..." : "Update"}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Abuse Detection</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={onSaveAbuseDetection} className="space-y-4">
+                                    <div className="flex items-center justify-between rounded-md border p-3">
+                                        <div>
+                                            <p className="text-sm font-medium">Enabled</p>
+                                            <p className="text-xs text-muted-foreground">Block suspicious high-frequency order activity per phone.</p>
+                                        </div>
+                                        <Switch checked={abuseEnabled} onCheckedChange={setAbuseEnabled} disabled={abuseSaving} />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="maxOrdersPerDayPerPhone">maxOrdersPerDayPerPhone</Label>
+                                        <Input
+                                            id="maxOrdersPerDayPerPhone"
+                                            type="number"
+                                            min={1}
+                                            step={1}
+                                            value={abuseMaxOrdersPerDay}
+                                            onChange={(e) => setAbuseMaxOrdersPerDay(e.target.value)}
+                                            placeholder="10"
+                                            disabled={abuseSaving}
+                                        />
+                                    </div>
+
+                                    {abuseError && (
+                                        <p className="text-sm text-destructive" role="alert">
+                                            {abuseError}
+                                        </p>
+                                    )}
+
+                                    {abuseOk && !abuseError && (
+                                        <p className="text-sm text-muted-foreground" role="status">
+                                            {abuseOk}
+                                        </p>
+                                    )}
+
+                                    <div className="flex justify-end">
+                                        <Button type="submit" disabled={abuseSaving}>
+                                            {abuseSaving ? "Saving..." : "Save"}
                                         </Button>
                                     </div>
                                 </form>

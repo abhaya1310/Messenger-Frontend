@@ -16,7 +16,6 @@ import {
     Calendar,
     CheckCircle,
     Clock,
-    FileUp,
     Loader2,
     Megaphone,
     Plus,
@@ -28,10 +27,9 @@ import { getAuthToken } from "@/lib/auth";
 import type {
     CampaignRun,
     CampaignRunStatus,
-    CampaignAudienceSource,
     CampaignDefinitionSummary,
-    UploadCsvAudienceResponse,
 } from "@/lib/types/campaign-run";
+import type { PosSegment, PosSegmentsListResponse } from "@/lib/types/pos-segments";
 
 function statusBadgeVariant(status: CampaignRunStatus) {
     switch (status) {
@@ -39,6 +37,10 @@ function statusBadgeVariant(status: CampaignRunStatus) {
             return "outline" as const;
         case "waiting_for_credits":
             return "outline" as const;
+        case "blocked_stale_segment":
+            return "outline" as const;
+        case "needs_manual_review":
+            return "destructive" as const;
         case "running":
             return "default" as const;
         case "completed":
@@ -57,40 +59,13 @@ function statusLabel(status: CampaignRunStatus): string {
     switch (status) {
         case "waiting_for_credits":
             return "Waiting for credits";
+        case "blocked_stale_segment":
+            return "Blocked (stale segment)";
+        case "needs_manual_review":
+            return "Needs manual review";
         default:
             return status;
     }
-}
-
-function formatInsufficientCreditsMessage(input: {
-    bucket?: string;
-    creditsRequired?: number;
-    creditsAvailable?: number;
-    eligibleCount?: number;
-    throttledCount?: number;
-    error?: string;
-}): string {
-    const bucket = input.bucket || "credits";
-    const required = typeof input.creditsRequired === "number" ? input.creditsRequired : undefined;
-    const available = typeof input.creditsAvailable === "number" ? input.creditsAvailable : undefined;
-    const eligibleCount = typeof input.eligibleCount === "number" ? input.eligibleCount : undefined;
-    const throttledCount = typeof input.throttledCount === "number" ? input.throttledCount : undefined;
-
-    const parts: string[] = [];
-    if (typeof required === "number" && typeof available === "number") {
-        parts.push(`Insufficient ${bucket} credits: required ${required}, available ${available}.`);
-    } else {
-        parts.push(input.error || `Insufficient ${bucket} credits.`);
-    }
-
-    if (typeof eligibleCount === "number") {
-        parts.push(`Eligible recipients: ${eligibleCount}.`);
-    }
-    if (typeof throttledCount === "number" && throttledCount > 0) {
-        parts.push(`Throttled (24h): ${throttledCount}.`);
-    }
-
-    return parts.join(" ");
 }
 
 function statusIcon(status: CampaignRunStatus) {
@@ -101,6 +76,10 @@ function statusIcon(status: CampaignRunStatus) {
             return <Calendar className="h-4 w-4" />;
         case "waiting_for_credits":
             return <Clock className="h-4 w-4" />;
+        case "blocked_stale_segment":
+            return <Clock className="h-4 w-4" />;
+        case "needs_manual_review":
+            return <XCircle className="h-4 w-4" />;
         case "running":
             return <Loader2 className="h-4 w-4 animate-spin" />;
         case "completed":
@@ -124,7 +103,7 @@ async function parseJsonSafe(res: Response) {
 }
 
 async function fetchCreditsPrecheckOrThrow(runId: string, token: string) {
-    const precheckRes = await fetch(`/api/campaign-runs/${encodeURIComponent(runId)}/credits/precheck`, {
+    const precheckRes = await fetch(`/api/campaign-runs/${encodeURIComponent(runId)}/precheck-credits`, {
         method: "GET",
         headers: {
             Authorization: `Bearer ${token}`,
@@ -145,6 +124,10 @@ export default function CampaignRunsClient() {
     const [definitions, setDefinitions] = useState<CampaignDefinitionSummary[]>([]);
     const [posEnabled, setPosEnabled] = useState(false);
 
+    const [segments, setSegments] = useState<PosSegment[]>([]);
+    const [segmentsLoading, setSegmentsLoading] = useState(false);
+    const [segmentsError, setSegmentsError] = useState<string | null>(null);
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -155,11 +138,10 @@ export default function CampaignRunsClient() {
     const [creating, setCreating] = useState(false);
 
     const [createDefinitionId, setCreateDefinitionId] = useState<string>("");
+    const [createName, setCreateName] = useState<string>("");
+    const [createSegmentId, setCreateSegmentId] = useState<string>("");
     const [createTemplateParams, setCreateTemplateParams] = useState<Record<string, string>>({});
-    const [createStartDate, setCreateStartDate] = useState<string>("");
-    const [createEndDate, setCreateEndDate] = useState<string>("");
     const [createFireAt, setCreateFireAt] = useState<string>("");
-    const [createAudienceSource, setCreateAudienceSource] = useState<CampaignAudienceSource>("csv");
 
     const [selectedRun, setSelectedRun] = useState<CampaignRun | null>(null);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -168,9 +150,11 @@ export default function CampaignRunsClient() {
     const [creditsPrecheckLoading, setCreditsPrecheckLoading] = useState(false);
     const [creditsPrecheckError, setCreditsPrecheckError] = useState<string | null>(null);
 
-    const [csvFile, setCsvFile] = useState<File | null>(null);
-    const [csvUploading, setCsvUploading] = useState(false);
-    const [csvResult, setCsvResult] = useState<UploadCsvAudienceResponse["data"] | null>(null);
+    const [runEditName, setRunEditName] = useState<string>("");
+    const [runEditFireAt, setRunEditFireAt] = useState<string>("");
+    const [runEditSegmentId, setRunEditSegmentId] = useState<string>("");
+    const [runEditTemplateParams, setRunEditTemplateParams] = useState<Record<string, string>>({});
+    const [runSaving, setRunSaving] = useState(false);
 
     const filteredRuns = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
@@ -282,6 +266,36 @@ export default function CampaignRunsClient() {
         }
     };
 
+    const loadSegments = async () => {
+        setSegmentsError(null);
+        setSegmentsLoading(true);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch("/api/admin/pos/segments", {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const data = await parseJsonSafe(res);
+            if (!res.ok) {
+                const msg = (data as any)?.error || (data as any)?.message || "Failed to load segments";
+                throw new Error(msg);
+            }
+
+            const parsed = data as PosSegmentsListResponse;
+            setSegments(Array.isArray((parsed as any)?.data) ? ((parsed as any).data as PosSegment[]) : []);
+        } catch (e) {
+            setSegmentsError(e instanceof Error ? e.message : "Failed to load segments");
+            setSegments([]);
+        } finally {
+            setSegmentsLoading(false);
+        }
+    };
+
     useEffect(() => {
         loadAll();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -289,32 +303,31 @@ export default function CampaignRunsClient() {
 
     const openCreateDialog = () => {
         setCreateDefinitionId("");
-        setCreateStartDate("");
-        setCreateEndDate("");
+        setCreateName("");
+        setCreateSegmentId("");
         setCreateFireAt("");
-        setCreateAudienceSource("csv");
-        setCsvFile(null);
-        setCsvResult(null);
         setCreateTemplateParams({});
         setShowCreate(true);
+        loadSegments();
     };
 
     const createRun = async () => {
         setError(null);
 
-        if (!createDefinitionId || !createStartDate || !createEndDate || !createFireAt) {
+        if (!createDefinitionId || !createFireAt || !createSegmentId) {
             setError("Please fill in all required fields");
+            return;
+        }
+
+        const hasAnyTemplateParams = Object.values(createTemplateParams || {}).some((v) => String(v ?? "").trim().length > 0);
+        if (!hasAnyTemplateParams) {
+            setError("Please set template parameters before creating a run");
             return;
         }
 
         const selectedDefinition = definitions.find((d) => d._id === createDefinitionId);
         if (!selectedDefinition) {
             setError("Please select a campaign from the published catalog");
-            return;
-        }
-
-        if (createAudienceSource === "pos" && !posEnabled) {
-            setError("POS integration is not enabled for this org");
             return;
         }
 
@@ -331,10 +344,10 @@ export default function CampaignRunsClient() {
                 },
                 body: JSON.stringify({
                     campaignDefinitionId: createDefinitionId,
-                    startDate: createStartDate,
-                    endDate: createEndDate,
                     fireAt: createFireAt,
-                    audience: { source: createAudienceSource },
+                    name: createName.trim() || undefined,
+                    audience: { source: "segment" },
+                    segmentId: createSegmentId,
                     templateParams: createTemplateParams,
                 }),
             });
@@ -353,6 +366,59 @@ export default function CampaignRunsClient() {
             setError(e instanceof Error ? e.message : "Failed to create run");
         } finally {
             setCreating(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!selectedRun) return;
+        setRunEditName(selectedRun.name || "");
+        setRunEditFireAt(selectedRun.fireAt || "");
+        setRunEditSegmentId(selectedRun.segmentId || "");
+        setRunEditTemplateParams(selectedRun.templateParams || {});
+    }, [selectedRun]);
+
+    const canEditSelectedRun = (run: CampaignRun) => {
+        return run.status === "draft" || run.status === "scheduled";
+    };
+
+    const saveSelectedRun = async () => {
+        if (!selectedRun) return;
+        if (!canEditSelectedRun(selectedRun)) return;
+
+        setError(null);
+        setRunSaving(true);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch(`/api/campaign-runs/${encodeURIComponent(selectedRun._id)}`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    name: runEditName.trim() || undefined,
+                    fireAt: runEditFireAt || undefined,
+                    audience: { source: "segment" },
+                    segmentId: runEditSegmentId || undefined,
+                    templateParams: runEditTemplateParams,
+                }),
+            });
+
+            const data = await parseJsonSafe(res);
+            if (!res.ok) {
+                const msg = (data as any)?.error || (data as any)?.message || "Failed to update run";
+                throw new Error(msg);
+            }
+
+            const updated = (data as any)?.data as CampaignRun;
+            setSelectedRun(updated);
+            setRuns((prev) => prev.map((r) => (r._id === updated._id ? updated : r)));
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to update run");
+        } finally {
+            setRunSaving(false);
         }
     };
 
@@ -380,19 +446,16 @@ export default function CampaignRunsClient() {
             if (!token) throw new Error("Unauthorized");
 
             if (action === "schedule") {
-                const precheck = await fetchCreditsPrecheckOrThrow(run._id, token);
-                setCreditsPrecheck(precheck);
-                if (precheck && precheck.isSufficient === false) {
-                    throw new Error(
-                        formatInsufficientCreditsMessage({
-                            bucket: precheck.bucket,
-                            creditsRequired: precheck.creditsRequired,
-                            creditsAvailable: precheck.creditsAvailable,
-                            eligibleCount: precheck.eligibleCount,
-                            throttledCount: precheck.throttledCount,
-                            error: undefined,
-                        })
-                    );
+                if (run.status !== "draft") {
+                    throw new Error("Only draft runs can be scheduled");
+                }
+                if (!run.segmentId) {
+                    throw new Error("Segment is required before scheduling");
+                }
+                const params = run.templateParams || {};
+                const hasAny = Object.values(params).some((v) => String(v ?? "").trim().length > 0);
+                if (!hasAny) {
+                    throw new Error("Template parameters are required before scheduling");
                 }
             }
 
@@ -410,20 +473,6 @@ export default function CampaignRunsClient() {
 
             const data = await parseJsonSafe(res);
             if (!res.ok) {
-                if (res.status === 409 && (data as any)?.code === "INSUFFICIENT_CREDITS") {
-                    const d = (data as any)?.data || {};
-                    throw new Error(
-                        formatInsufficientCreditsMessage({
-                            bucket: d.bucket,
-                            creditsRequired: d.creditsRequired,
-                            creditsAvailable: d.creditsAvailable,
-                            eligibleCount: d.eligibleCount,
-                            throttledCount: d.throttledCount,
-                            error: (data as any)?.error,
-                        })
-                    );
-                }
-
                 const msg = (data as any)?.error || (data as any)?.message || `Failed to ${action}`;
                 throw new Error(msg);
             }
@@ -445,46 +494,6 @@ export default function CampaignRunsClient() {
             setError(e instanceof Error ? e.message : "Action failed");
         } finally {
             setActionLoadingId(null);
-        }
-    };
-
-    const uploadCsv = async (run: CampaignRun) => {
-        setError(null);
-        setCsvResult(null);
-
-        if (!csvFile) {
-            setError("Please select a CSV file");
-            return;
-        }
-
-        setCsvUploading(true);
-        try {
-            const token = getAuthToken();
-            if (!token) throw new Error("Unauthorized");
-
-            const formData = new FormData();
-            formData.append("file", csvFile);
-
-            const res = await fetch(`/api/campaign-runs/${encodeURIComponent(run._id)}/audience/csv`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                body: formData,
-            });
-
-            const data = await parseJsonSafe(res);
-            if (!res.ok) {
-                const msg = (data as any)?.error || (data as any)?.message || "CSV upload failed";
-                throw new Error(msg);
-            }
-
-            setCsvResult((data as any)?.data || null);
-            await refreshRun(run._id);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "CSV upload failed");
-        } finally {
-            setCsvUploading(false);
         }
     };
 
@@ -602,6 +611,8 @@ export default function CampaignRunsClient() {
                                     <SelectItem value="draft">Draft</SelectItem>
                                     <SelectItem value="scheduled">Scheduled</SelectItem>
                                     <SelectItem value="waiting_for_credits">Waiting for credits</SelectItem>
+                                    <SelectItem value="blocked_stale_segment">Blocked (stale segment)</SelectItem>
+                                    <SelectItem value="needs_manual_review">Needs manual review</SelectItem>
                                     <SelectItem value="running">Running</SelectItem>
                                     <SelectItem value="completed">Completed</SelectItem>
                                     <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -609,6 +620,22 @@ export default function CampaignRunsClient() {
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        {statusFilter === "waiting_for_credits" && (
+                            <p className="text-sm text-muted-foreground mt-3">
+                                Blocked until credits are refilled.
+                            </p>
+                        )}
+                        {statusFilter === "blocked_stale_segment" && (
+                            <p className="text-sm text-muted-foreground mt-3">
+                                Segment is stale; contact admin to recompute.
+                            </p>
+                        )}
+                        {statusFilter === "needs_manual_review" && (
+                            <p className="text-sm text-muted-foreground mt-3">
+                                Backend detected a credit mismatch; admin intervention required.
+                            </p>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -708,17 +735,21 @@ export default function CampaignRunsClient() {
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Create Campaign Run</DialogTitle>
-                        <DialogDescription>Select a published campaign and configure schedule and audience.</DialogDescription>
+                        <DialogDescription>Select a published campaign, select a segment, and schedule when to send.</DialogDescription>
                     </DialogHeader>
 
                     <Tabs defaultValue="campaign" className="mt-4">
                         <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="campaign">Campaign</TabsTrigger>
-                            <TabsTrigger value="schedule">Schedule</TabsTrigger>
                             <TabsTrigger value="audience">Audience</TabsTrigger>
+                            <TabsTrigger value="schedule">Schedule</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="campaign" className="space-y-4 mt-4">
+                            <div className="space-y-2">
+                                <Label>Run Name (optional)</Label>
+                                <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Diwali Re-engagement 2025" />
+                            </div>
                             <div className="space-y-2">
                                 <Label>Campaign *</Label>
                                 <Select
@@ -780,35 +811,36 @@ export default function CampaignRunsClient() {
                             })()}
                         </TabsContent>
 
-                        <TabsContent value="schedule" className="space-y-4 mt-4">
-                            <DateTimePicker label="Start Date *" value={createStartDate} onChange={setCreateStartDate} minDate={minDate} required />
-                            <DateTimePicker label="End Date *" value={createEndDate} onChange={setCreateEndDate} minDate={minDate} required />
-                            <DateTimePicker label="Fire At *" value={createFireAt} onChange={setCreateFireAt} minDate={minDate} required />
-                        </TabsContent>
-
                         <TabsContent value="audience" className="space-y-4 mt-4">
                             <div className="space-y-2">
-                                <Label>Audience Source *</Label>
-                                <Select value={createAudienceSource} onValueChange={(v) => setCreateAudienceSource(v as CampaignAudienceSource)}>
+                                <Label>Segment *</Label>
+                                <Select value={createSegmentId} onValueChange={(v) => setCreateSegmentId(v)}>
                                     <SelectTrigger>
-                                        <SelectValue />
+                                        <SelectValue placeholder={segmentsLoading ? "Loading segments..." : "Select a segment"} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="csv">CSV Upload</SelectItem>
-                                        <SelectItem value="pos" disabled={!posEnabled}>
-                                            POS Customers
-                                        </SelectItem>
+                                        {segments.map((s) => (
+                                            <SelectItem key={s._id} value={s._id}>
+                                                {s.name}{typeof s.audience?.size === "number" ? ` (${s.audience.size.toLocaleString()})` : ""}
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
+                                {segmentsError && (
+                                    <p className="text-sm text-destructive" role="alert">
+                                        {segmentsError}
+                                    </p>
+                                )}
+                                {!posEnabled && (
+                                    <p className="text-sm text-muted-foreground">
+                                        POS integration is not enabled for this org. Segment availability may be limited.
+                                    </p>
+                                )}
                             </div>
-                            {!posEnabled && createAudienceSource === "pos" && (
-                                <p className="text-sm text-muted-foreground">POS integration is not enabled for this org.</p>
-                            )}
-                            {createAudienceSource === "csv" && (
-                                <p className="text-sm text-muted-foreground">
-                                    After creating the run, upload a CSV to add recipients. Scheduling requires a successful upload.
-                                </p>
-                            )}
+                        </TabsContent>
+
+                        <TabsContent value="schedule" className="space-y-4 mt-4">
+                            <DateTimePicker label="Fire At *" value={createFireAt} onChange={setCreateFireAt} minDate={minDate} required />
                         </TabsContent>
                     </Tabs>
 
@@ -826,8 +858,6 @@ export default function CampaignRunsClient() {
 
             <Dialog open={!!selectedRun} onOpenChange={() => {
                 setSelectedRun(null);
-                setCsvFile(null);
-                setCsvResult(null);
             }}>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     {selectedRun && (
@@ -850,22 +880,97 @@ export default function CampaignRunsClient() {
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                     <div>
-                                        <div className="text-gray-500">Start</div>
-                                        <div className="font-medium">{selectedRun.startDate ? new Date(selectedRun.startDate).toLocaleString() : "—"}</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-gray-500">End</div>
-                                        <div className="font-medium">{selectedRun.endDate ? new Date(selectedRun.endDate).toLocaleString() : "—"}</div>
-                                    </div>
-                                    <div>
                                         <div className="text-gray-500">Fire At</div>
                                         <div className="font-medium">{selectedRun.fireAt ? new Date(selectedRun.fireAt).toLocaleString() : "—"}</div>
                                     </div>
+                                    <div>
+                                        <div className="text-gray-500">Queued</div>
+                                        <div className="font-medium">{typeof selectedRun.queuedCount === "number" ? selectedRun.queuedCount.toLocaleString() : "—"}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-gray-500">Sent / Failed</div>
+                                        <div className="font-medium">
+                                            {(typeof selectedRun.sentCount === "number" ? selectedRun.sentCount : 0).toLocaleString()} / {(typeof selectedRun.failedCount === "number" ? selectedRun.failedCount : 0).toLocaleString()}
+                                        </div>
+                                    </div>
                                 </div>
 
-                                {selectedRun.status === "draft" && (
+                                <div className="border-t pt-4 space-y-4">
+                                    <h4 className="font-medium">Run Details</h4>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="space-y-2">
+                                            <Label>Name</Label>
+                                            <Input value={runEditName} onChange={(e) => setRunEditName(e.target.value)} disabled={!canEditSelectedRun(selectedRun) || runSaving} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Segment</Label>
+                                            <Select value={runEditSegmentId} onValueChange={(v) => setRunEditSegmentId(v)} disabled={!canEditSelectedRun(selectedRun) || runSaving}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder={segmentsLoading ? "Loading segments..." : "Select a segment"} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {segments.map((s) => (
+                                                        <SelectItem key={s._id} value={s._id}>
+                                                            {s.name}{typeof s.audience?.size === "number" ? ` (${s.audience.size.toLocaleString()})` : ""}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label>Fire At</Label>
+                                        <DateTimePicker label="" value={runEditFireAt} onChange={setRunEditFireAt} minDate={minDate} required={false as any} />
+                                    </div>
+
+                                    {selectedRun.campaignDefinitionId && (() => {
+                                        const tmpl: any = selectedRun.campaignDefinitionId?.template as any;
+                                        const sampleValues = (tmpl?.preview?.sampleValues || {}) as Record<string, string>;
+                                        const keys = Array.from(new Set([...Object.keys(sampleValues), ...Object.keys(runEditTemplateParams || {})]));
+                                        if (keys.length === 0) return null;
+                                        return (
+                                            <div className="space-y-2">
+                                                <Label>Template Parameters</Label>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {keys.map((k) => (
+                                                        <div key={k} className="space-y-1">
+                                                            <div className="text-xs font-medium text-gray-700">Variable {k}</div>
+                                                            <Input
+                                                                value={runEditTemplateParams[k] ?? sampleValues[k] ?? ""}
+                                                                onChange={(e) => {
+                                                                    const value = e.target.value;
+                                                                    setRunEditTemplateParams((prev) => ({
+                                                                        ...prev,
+                                                                        [k]: value,
+                                                                    }));
+                                                                }}
+                                                                placeholder={sampleValues[k]}
+                                                                disabled={!canEditSelectedRun(selectedRun) || runSaving}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {canEditSelectedRun(selectedRun) && (
+                                        <div className="flex justify-end gap-2">
+                                            <Button variant="outline" onClick={loadSegments} disabled={segmentsLoading}>
+                                                Refresh Segments
+                                            </Button>
+                                            <Button onClick={saveSelectedRun} disabled={runSaving}>
+                                                {runSaving ? "Saving..." : "Save"}
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {(selectedRun.status === "draft" || selectedRun.status === "scheduled") && (
                                     <div className="border-t pt-4">
-                                        <h4 className="font-medium mb-2">Credits Check</h4>
+                                        <h4 className="font-medium mb-2">Credits Check (precheck)</h4>
 
                                         {creditsPrecheckLoading && (
                                             <p className="text-sm text-muted-foreground" role="status">
@@ -882,12 +987,12 @@ export default function CampaignRunsClient() {
                                         {creditsPrecheck && !creditsPrecheckLoading && !creditsPrecheckError && (
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                                                 <div>
-                                                    <div className="text-gray-500">Bucket</div>
-                                                    <div className="font-medium capitalize">{creditsPrecheck.bucket}</div>
-                                                </div>
-                                                <div>
                                                     <div className="text-gray-500">Sufficient</div>
                                                     <div className="font-medium">{String(Boolean(creditsPrecheck.isSufficient))}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Total Audience</div>
+                                                    <div className="font-medium">{Number(creditsPrecheck.totalAudienceCount || 0).toLocaleString()}</div>
                                                 </div>
                                                 <div>
                                                     <div className="text-gray-500">Credits Required</div>
@@ -905,6 +1010,13 @@ export default function CampaignRunsClient() {
                                                     <div className="text-gray-500">Throttled (24h)</div>
                                                     <div className="font-medium">{Number(creditsPrecheck.throttledCount || 0).toLocaleString()}</div>
                                                 </div>
+                                                {creditsPrecheck.isSufficient === false && (
+                                                    <div className="md:col-span-2">
+                                                        <p className="text-sm text-amber-700">
+                                                            Insufficient credits. You can still schedule: the run will move to <span className="font-medium">waiting_for_credits</span>.
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -913,63 +1025,35 @@ export default function CampaignRunsClient() {
                                 <div className="border-t pt-4">
                                     <h4 className="font-medium mb-2">Audience</h4>
                                     <div className="text-sm text-gray-600">Source: {selectedRun.audience?.source?.toUpperCase()}</div>
-
-                                    {selectedRun.audience?.source === "csv" && (
-                                        <div className="mt-3 space-y-3">
-                                            <div className="flex flex-col gap-2">
-                                                <Label>Upload CSV</Label>
-                                                <Input
-                                                    type="file"
-                                                    accept=".csv,text/csv"
-                                                    onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-                                                />
+                                    {selectedRun.segmentId ? (() => {
+                                        const seg = segments.find((s) => s._id === selectedRun.segmentId);
+                                        return (
+                                            <div className="text-sm text-gray-600">
+                                                Segment: {seg?.name || selectedRun.segmentId}
+                                                {typeof seg?.audience?.size === "number" ? ` (${seg.audience.size.toLocaleString()})` : ""}
                                             </div>
-
-                                            <div className="flex gap-2">
-                                                <Button onClick={() => uploadCsv(selectedRun)} disabled={csvUploading || !csvFile} className="gap-2">
-                                                    {csvUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-                                                    Upload
-                                                </Button>
-                                                <Button variant="outline" onClick={() => refreshRun(selectedRun._id)}>
-                                                    Refresh
-                                                </Button>
-                                            </div>
-
-                                            {csvResult && (
-                                                <Card>
-                                                    <CardHeader className="pb-2">
-                                                        <CardTitle className="text-base">Upload Summary</CardTitle>
-                                                    </CardHeader>
-                                                    <CardContent>
-                                                        <div className="grid grid-cols-3 gap-3 text-sm">
-                                                            <div>
-                                                                <div className="text-gray-500">Valid</div>
-                                                                <div className="font-medium">{csvResult.validCount}</div>
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-gray-500">Invalid</div>
-                                                                <div className="font-medium">{csvResult.invalidCount}</div>
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-gray-500">Total</div>
-                                                                <div className="font-medium">{csvResult.totalRows}</div>
-                                                            </div>
-                                                        </div>
-                                                        {csvResult.errors?.length > 0 && (
-                                                            <div className="mt-3">
-                                                                <div className="text-gray-500 text-sm">Errors</div>
-                                                                <ul className="mt-1 text-sm text-gray-700 list-disc pl-5">
-                                                                    {csvResult.errors.slice(0, 5).map((er, idx) => (
-                                                                        <li key={idx}>{er}</li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                    </CardContent>
-                                                </Card>
-                                            )}
-                                        </div>
+                                        );
+                                    })() : (
+                                        <div className="text-sm text-gray-600">Segment: —</div>
                                     )}
+                                </div>
+
+                                <div className="border-t pt-4">
+                                    <h4 className="font-medium mb-2">Credits</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                        <div>
+                                            <div className="text-gray-500">Reserved</div>
+                                            <div className="font-medium">{Number(selectedRun.credits?.reservedAmount ?? 0).toLocaleString()}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-gray-500">Debited</div>
+                                            <div className="font-medium">{Number(selectedRun.credits?.debitedAmount ?? 0).toLocaleString()}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-gray-500">Released</div>
+                                            <div className="font-medium">{Number(selectedRun.credits?.releasedAmount ?? 0).toLocaleString()}</div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {selectedRun.lastError && (
@@ -993,8 +1077,7 @@ export default function CampaignRunsClient() {
                                             onClick={() => doAction(selectedRun, "schedule")}
                                             disabled={
                                                 actionLoadingId === selectedRun._id ||
-                                                creditsPrecheckLoading ||
-                                                (creditsPrecheck && creditsPrecheck.isSufficient === false)
+                                                creditsPrecheckLoading
                                             }
                                         >
                                             Schedule
@@ -1002,16 +1085,19 @@ export default function CampaignRunsClient() {
                                     </>
                                 )}
 
-                                {(selectedRun.status === "draft" || selectedRun.status === "scheduled" || selectedRun.status === "waiting_for_credits") && (
-                                    <Button
-                                        variant="outline"
-                                        className="text-red-600 hover:text-red-700"
-                                        onClick={() => doAction(selectedRun, "cancel")}
-                                        disabled={actionLoadingId === selectedRun._id}
-                                    >
-                                        Cancel
-                                    </Button>
-                                )}
+                                {(selectedRun.status === "draft" ||
+                                    selectedRun.status === "scheduled" ||
+                                    selectedRun.status === "waiting_for_credits" ||
+                                    selectedRun.status === "blocked_stale_segment") && (
+                                        <Button
+                                            variant="outline"
+                                            className="text-red-600 hover:text-red-700"
+                                            onClick={() => doAction(selectedRun, "cancel")}
+                                            disabled={actionLoadingId === selectedRun._id}
+                                        >
+                                            Cancel
+                                        </Button>
+                                    )}
                             </DialogFooter>
                         </>
                     )}

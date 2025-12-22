@@ -1,6 +1,15 @@
-export type CampaignRunStatus = 'draft' | 'scheduled' | 'waiting_for_credits' | 'running' | 'completed' | 'cancelled' | 'failed';
+export type CampaignRunStatus =
+    | 'draft'
+    | 'scheduled'
+    | 'running'
+    | 'completed'
+    | 'cancelled'
+    | 'waiting_for_credits'
+    | 'blocked_stale_segment'
+    | 'needs_manual_review'
+    | 'failed';
 
-export type CampaignAudienceSource = 'csv' | 'pos';
+export type CampaignAudienceSource = 'segment' | 'csv' | 'pos';
 
 export interface CampaignDefinitionSummaryPreview {
     headerText?: string;
@@ -27,10 +36,10 @@ export interface CampaignRun {
     _id: string;
     orgId: string;
     campaignDefinitionId: CampaignDefinitionSummary;
+    name?: string;
     status: CampaignRunStatus;
-    startDate: string;
-    endDate: string;
     fireAt: string;
+    templateParams?: Record<string, string>;
     audience: {
         source: CampaignAudienceSource;
         csv?: {
@@ -39,11 +48,18 @@ export interface CampaignRun {
             phoneNumbers?: string[];
         };
     };
+    segmentId?: string;
     targetCount?: number;
+    queuedCount?: number;
     sentCount?: number;
     failedCount?: number;
     lastError?: string;
     creditsReserved?: number;
+    credits?: {
+        reservedAmount?: number;
+        debitedAmount?: number;
+        releasedAmount?: number;
+    };
     audienceSnapshot?: {
         snapshotId: string;
         totalCount: number;
@@ -77,22 +93,22 @@ export interface CampaignRunSingleResponse {
 
 export interface CreateCampaignRunRequest {
     campaignDefinitionId: string;
-    startDate: string;
-    endDate: string;
+    name?: string;
     fireAt: string;
     audience: {
         source: CampaignAudienceSource;
     };
+    segmentId?: string;
     templateParams?: Record<string, string>;
 }
 
 export interface UpdateCampaignRunRequest {
-    startDate?: string;
-    endDate?: string;
+    name?: string;
     fireAt?: string;
     audience?: {
         source: CampaignAudienceSource;
     };
+    segmentId?: string;
     templateParams?: Record<string, string>;
 }
 
