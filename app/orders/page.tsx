@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, getCurrentOrgId } from "@/lib/auth";
 import type { Order, OrdersListResponse } from "@/lib/types/order";
 
 function getOrderId(o: Order, index: number): string {
@@ -65,10 +65,13 @@ export default function OrdersPage() {
                 throw new Error("Unauthorized");
             }
 
+            const orgId = getCurrentOrgId();
+
             const res = await fetch("/api/orders", {
                 method: "GET",
                 headers: {
                     Authorization: `Bearer ${token}`,
+                    ...(orgId ? { "X-ORG-ID": orgId } : {}),
                 },
             });
 

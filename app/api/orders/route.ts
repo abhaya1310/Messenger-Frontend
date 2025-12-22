@@ -25,15 +25,10 @@ async function parseBackendResponse(res: Response) {
     }
 }
 
-export async function GET(request: NextRequest) {
-    const authHeaders = getUserAuthHeaders(request);
-    if (!authHeaders) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+function buildBackendUrl(pathname: string, request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
-    const backendUrl = new URL('/api/orders', getBackendBaseUrl());
+    const backendUrl = new URL(pathname, getBackendBaseUrl());
     backendUrl.searchParams.set('limit', '50');
 
     const outletId = searchParams.get('outletId');
@@ -44,14 +39,37 @@ export async function GET(request: NextRequest) {
     if (fromDate) backendUrl.searchParams.set('fromDate', fromDate);
     if (toDate) backendUrl.searchParams.set('toDate', toDate);
 
-    const res = await fetch(backendUrl.toString(), {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders,
-        },
-    });
+    return backendUrl;
+}
 
-    const data = await parseBackendResponse(res);
-    return NextResponse.json(data, { status: res.status });
+export async function GET(request: NextRequest) {
+    const authHeaders = getUserAuthHeaders(request);
+    if (!authHeaders) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const candidatePaths = ['/api/orders', '/api/pos/orders', '/api/admin/orders'];
+
+    for (const pathname of candidatePaths) {
+        const backendUrl = buildBackendUrl(pathname, request);
+        const res = await fetch(backendUrl.toString(), {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+            },
+        });
+
+        if (res.status === 404 || res.status === 405) {
+            continue;
+        }
+
+        const data = await parseBackendResponse(res);
+        return NextResponse.json(data, { status: res.status });
+    }
+
+    return NextResponse.json(
+        { error: 'Orders endpoint not found on backend. Tried: /api/orders, /api/pos/orders, /api/admin/orders' },
+        { status: 502 }
+    );
 }

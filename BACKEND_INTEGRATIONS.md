@@ -15,6 +15,32 @@ It is intentionally **code-accurate**:
 
 ---
 
+## 1.1 POS Orders UAT Debugging — Execution Contract (copy/paste)
+
+> Purpose: This section documents the minimal, reliable wiring needed to get POS bills flowing into Mongo and visible in the `/orders` UI.
+> This is a DEBUG / VERIFICATION tool (not analytics).
+
+### Base URL
+
+- **Backend base URL stays env-driven:**
+  - Client-side direct calls use `NEXT_PUBLIC_BACKEND_URL` via `lib/config.ts` (`config.apiUrl`).
+  - Next.js proxy routes use `BACKEND_URL` (preferred) or `NEXT_PUBLIC_BACKEND_URL` fallback.
+
+### Auth headers
+
+- **User JWT (Orders page):**
+  - `Authorization: Bearer <user_jwt>`
+  - `X-ORG-ID: <orgId>` (recommended; forwarded when present)
+
+- **Admin JWT (POS diagnostics + outlet mapping):**
+  - `Authorization: Bearer <admin_jwt>`
+
+- **Cron secret (manual consumer trigger):**
+  - `X-CRON-SECRET: <cron_secret>`
+  - This secret is NOT the admin JWT.
+
+---
+
 ## 2) Authentication + Required Headers
 
 ### 2.1 User authentication (JWT)
@@ -86,6 +112,42 @@ It is intentionally **code-accurate**:
 - **Frontend route:** `POST /api/admin/org/:orgId/user`
 - **Backend route:** `POST /api/admin/org/:orgId/user`
 - **Headers forwarded:** `Content-Type`, `X-ORG-ID`, admin auth
+
+### 3.2.1 Admin POS diagnostics (single pane of glass)
+
+**File:** `app/api/admin/org/[orgId]/pos/status/route.ts`
+
+- **Frontend route:** `GET /api/admin/org/:orgId/pos/status`
+- **Backend route:** `GET /api/admin/org/:orgId/pos/status`
+- **Auth:** admin
+- **Headers forwarded:** `Content-Type`, `X-ORG-ID`, admin auth
+
+Used to debug:
+
+- Outlet mapping status (mapped list + unmapped count)
+- Last rejected order (transaction + outlet)
+- Container consumer metrics (fetched/ingested/duplicate/rejected, timestamps)
+- Poison / invalid bills tracking
+
+### 3.2.2 Admin outlet mapping (required for strict ingestion)
+
+**List + Create outlets**
+
+- **File:** `app/api/admin/org/[orgId]/outlets/route.ts`
+- `GET /api/admin/org/:orgId/outlets` → `GET /api/admin/org/:orgId/outlets`
+- `POST /api/admin/org/:orgId/outlets` → `POST /api/admin/org/:orgId/outlets`
+
+**Map / clear POS outlet id**
+
+- **File:** `app/api/admin/org/[orgId]/outlets/[outletId]/pos/route.ts`
+- `PATCH /api/admin/org/:orgId/outlets/:outletId/pos` → `PATCH /api/admin/org/:orgId/outlets/:outletId/pos`
+- Body:
+  - `{ "posOutletId": "123" }` (set)
+  - `{ "posOutletId": null }` (clear)
+
+Important rule:
+
+- POS bills are accepted only if incoming bill `outletId` matches an outlet's configured `posOutletId` **within the org**.
 
 ### 3.3 Admin WhatsApp configuration
 
@@ -165,6 +227,78 @@ These proxy routes exist under `app/api/**`:
 - `GET /api/analytics/export` → `GET /api/analytics/export`
 - `POST /api/feedback/send` → backend configured via `NEXT_PUBLIC_API_URL` (see file)
 - `POST /api/feedback/preview` → backend configured via `NEXT_PUBLIC_API_URL` (see file)
+
+### 3.6.1 Orders (UAT debugging tool)
+
+**File:** `app/api/orders/route.ts`
+
+- **Frontend route:** `GET /api/orders`
+- **Backend route (primary):** `GET /api/orders?limit=50`
+- **Backend route (fallbacks if primary is not present):**
+  - `GET /api/pos/orders?limit=50`
+  - `GET /api/admin/orders?limit=50`
+- **Auth:** user JWT required
+- **Headers forwarded:**
+  - `Authorization: Bearer <token>`
+  - `X-ORG-ID: <orgId>` (forwarded when present)
+
+**Notes:**
+- This is used by the `/orders` page and is intentionally a read-only verification/debug tool.
+- No polling; manual refresh only.
+
+Expected order shape (frontend is defensive; fields may be missing):
+
+```ts
+Order {
+  id: string
+  transactionId: string
+  createdAt: string
+
+  outlet: {
+    id: string
+    name: string
+    posOutletId: string
+  }
+
+  guest: {
+    name?: string
+    phone?: string
+  }
+
+  totalAmount: number
+  paymentMethod?: string
+  source: "POS"
+  status: "ingested" | "duplicate" | "rejected"
+}
+```
+
+### 3.6.2 Cron trigger (manual POS container consume)
+
+**File:** `app/api/cron/pos/container-consume/route.ts`
+
+- **Frontend route:** `POST /api/cron/pos/container-consume`
+- **Backend route:** `POST /api/cron/pos/container-consume`
+- **Auth:** cron secret required
+- **Headers forwarded:**
+  - `X-CRON-SECRET: <cron_secret>`
+
+**Important:**
+- Do not call this from a public browser UI unless you are comfortable exposing the cron secret.
+
+---
+
+## 3.8 Backend knobs required for Orders ingestion (DevOps / QA)
+
+These are backend environment variables (set on backend runtime) needed to pull from the POS container and ingest into Mongo:
+
+- `POS_CONTAINER_BASE_URL`
+- `POS_CONTAINER_TIMEOUT_MS` (commonly `10000`)
+- `POS_CONTAINER_MAX_INVALID_ATTEMPTS` (commonly `5`)
+
+Cron trigger protection:
+
+- A cron secret env var is required by the backend (deployment-specific name).
+- The request header is: `X-CRON-SECRET: <cron_secret>`.
 
 **Note:** The repository also performs **direct calls** for most of these via `lib/api.ts`.
 
