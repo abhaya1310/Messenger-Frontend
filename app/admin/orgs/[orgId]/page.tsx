@@ -363,6 +363,9 @@ export default function AdminOrgDetailsPage() {
                             <Link href="/admin/orgs">All orgs</Link>
                         </Button>
                         <Button variant="outline" asChild>
+                            <Link href={`/admin/orgs/${encodeURIComponent(orgId)}/outlets`}>Outlets</Link>
+                        </Button>
+                        <Button variant="outline" asChild>
                             <Link href={`/admin/orgs/${encodeURIComponent(orgId)}/credits`}>Credits</Link>
                         </Button>
                     </div>
