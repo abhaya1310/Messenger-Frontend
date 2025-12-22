@@ -39,6 +39,9 @@ This is a **Next.js 15** application built with:
   - Admin credits operations:
     - Org list with credits summary (`/admin/orgs`) via `GET /api/admin/whatsapp/orgs`
     - Org credits drill-down (`/admin/orgs/[orgId]/credits`) showing balances, refill, and ledger
+  - Admin outlet mapping for POS ingestion:
+    - Outlets page (`/admin/orgs/[orgId]/outlets`) allows creating outlets and mapping `posOutletId` per outlet.
+    - **Critical rule:** POS orders are accepted only if the incoming POS `outletId` matches a configured `Outlet.posOutletId` for that org.
 - **Dashboard**
   - KPI overview and customer segments (`/dashboard`).
   - Live WhatsApp credits balances (`/dashboard`) via `GET /api/credits/me`.
@@ -68,6 +71,7 @@ This is a **Next.js 15** application built with:
 - **`/admin/orgs`**: Admin org list + WhatsApp status + credits summary (admin-only).
 - **`/admin/orgs/new`**: Create a new org + invite a user email (admin-only). Displays `accessCode` + `expiresAt`.
 - **`/admin/orgs/[orgId]`**: Org details + WhatsApp configuration (admin-only).
+- **`/admin/orgs/[orgId]/outlets`**: Org outlets management + POS outlet mapping + POS status diagnostics (admin-only).
 - **`/admin/orgs/[orgId]/credits`**: Org credits balances + refill + ledger (admin-only).
 - **`/admin/templates`**: Admin templates browser (UI mirrors `/templates`).
 - **`/admin/campaigns`**: Admin campaign catalog (Campaign Definitions).
@@ -184,6 +188,13 @@ Credits-related proxy routes:
 - `GET /api/admin/org/[orgId]/credits`
 - `POST /api/admin/org/[orgId]/credits/refill`
 - `GET /api/admin/org/[orgId]/credits/ledger`
+
+POS outlets + diagnostics proxy routes:
+
+- `GET /api/admin/org/[orgId]/outlets`
+- `POST /api/admin/org/[orgId]/outlets`
+- `PATCH /api/admin/org/[orgId]/outlets/[outletId]/pos`
+- `GET /api/admin/org/[orgId]/pos/status`
 
 For an exhaustive, code-accurate list of integrations, see:
 

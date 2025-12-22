@@ -73,6 +73,10 @@ Key pages:
 - `/settings`
 - `/privacy-policy`
 
+Admin pages:
+
+- `/admin/orgs/[orgId]/outlets` (Outlets + POS mapping + POS diagnostics)
+
 ## Layout & Auth Gating
 
 ### Root Layout
@@ -213,6 +217,9 @@ Admin proxy routes:
 
 - `app/api/admin/orgs/route.ts`
 - `app/api/admin/org/[orgId]/route.ts`
+- `app/api/admin/org/[orgId]/outlets/route.ts` (list + create outlets)
+- `app/api/admin/org/[orgId]/outlets/[outletId]/pos/route.ts` (map/clear `posOutletId`)
+- `app/api/admin/org/[orgId]/pos/status/route.ts` (POS diagnostics)
 - `app/api/admin/org/[orgId]/user/route.ts`
 - `app/api/admin/org/[orgId]/whatsapp/update-phone-number-id/route.ts`
 - `app/api/admin/org/[orgId]/whatsapp/configure-shared/route.ts`
@@ -223,6 +230,28 @@ Admin proxy routes:
 The repo includes `app/api/README.md` marking these as deprecated; treat that file as outdated.
 
 ## Key Feature Flows
+
+### POS Outlets mapping (Admin)
+
+**Concepts**:
+
+- **Outlet** = internal store/location for an org.
+- **`posOutletId`** = external POS outlet identifier (what POS sends as `outletId` on each order).
+
+**Critical rule**:
+
+- POS orders are accepted only if the incoming `outletId` matches a configured `Outlet.posOutletId` for that org.
+- If a POS starts sending a new `outletId` and no outlet is mapped, those orders will be rejected until mapping is created.
+
+**Admin flow**:
+
+```text
+/admin/orgs/[orgId]/outlets
+  -> GET /api/admin/org/:orgId/outlets
+  -> POST /api/admin/org/:orgId/outlets (create)
+  -> PATCH /api/admin/org/:orgId/outlets/:outletId/pos (set or clear mapping)
+  -> GET /api/admin/org/:orgId/pos/status (diagnostics)
+```
 
 ### 1) Login
 

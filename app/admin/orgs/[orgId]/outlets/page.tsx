@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle, Loader2, Save } from "lucide-react";
@@ -11,32 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { AdminOutlet } from "@/lib/types/admin-outlets";
+import type {
+    AdminOrgPosStatusResponse,
+    AdminOutlet,
+    AdminOutletCreateResponse,
+    AdminOutletsListResponse,
+} from "@/lib/types/admin-outlets";
 
 type ToastState = { type: "success" | "error"; message: string } | null;
-
-type OrgDetailsResponse = {
-    success: boolean;
-    data: any;
-};
-
-function extractOutlets(orgData: any): AdminOutlet[] {
-    const candidates = [
-        orgData?.outlets,
-        orgData?.locations,
-        orgData?.stores,
-        orgData?.branches,
-        orgData?.pos?.outlets,
-        orgData?.posIntegration?.outlets,
-        orgData?.services?.posIntegration?.outlets,
-    ];
-
-    for (const c of candidates) {
-        if (Array.isArray(c)) return c as AdminOutlet[];
-    }
-
-    return [];
-}
 
 function getOutletId(outlet: AdminOutlet): string {
     return String(outlet._id || outlet.id || outlet.outletId || "");
@@ -51,6 +33,15 @@ export default function AdminOrgOutletsPage() {
     const [outlets, setOutlets] = useState<AdminOutlet[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const [posStatus, setPosStatus] = useState<AdminOrgPosStatusResponse["data"] | null>(null);
+    const [posStatusLoading, setPosStatusLoading] = useState(false);
+    const [posStatusError, setPosStatusError] = useState<string | null>(null);
+
+    const [createName, setCreateName] = useState("");
+    const [createAddress, setCreateAddress] = useState("");
+    const [createPosOutletId, setCreatePosOutletId] = useState("");
+    const [createLoading, setCreateLoading] = useState(false);
 
     const [draftById, setDraftById] = useState<Record<string, string>>({});
     const [savingById, setSavingById] = useState<Record<string, boolean>>({});
@@ -77,11 +68,23 @@ export default function AdminOrgOutletsPage() {
                 return;
             }
 
-            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}`, {
+            const orgRes = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}`, {
                 method: "GET",
                 headers: {
                     Authorization: `Bearer ${token}`,
                     "X-ORG-ID": orgId,
+                },
+            });
+
+            const orgJson = (await orgRes.json().catch(() => ({}))) as any;
+            if (orgRes.ok) {
+                setOrgName(String(orgJson?.data?.orgName || orgId));
+            }
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/outlets`, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
                 },
             });
 
@@ -92,16 +95,13 @@ export default function AdminOrgOutletsPage() {
                     router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}/outlets`)}`);
                     return;
                 }
-                setError(data?.error || data?.message || "Failed to fetch org");
+                setError(data?.error || data?.message || "Failed to fetch outlets");
                 setOutlets([]);
                 return;
             }
 
-            const parsed = data as OrgDetailsResponse;
-            const orgData = parsed?.data;
-            setOrgName(String(orgData?.orgName || orgId));
-
-            const nextOutlets = extractOutlets(orgData);
+            const parsed = data as AdminOutletsListResponse;
+            const nextOutlets = Array.isArray(parsed?.data) ? parsed.data : [];
             setOutlets(nextOutlets);
 
             const nextDraft: Record<string, string> = {};
@@ -112,17 +112,120 @@ export default function AdminOrgOutletsPage() {
             }
             setDraftById(nextDraft);
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to fetch org");
+            setError(e instanceof Error ? e.message : "Failed to fetch outlets");
             setOutlets([]);
         } finally {
             setLoading(false);
         }
     };
 
+    const loadPosStatus = async () => {
+        setPosStatusLoading(true);
+        setPosStatusError(null);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/pos/status`, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                if (res.status === 401) {
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}/outlets`)}`);
+                    return;
+                }
+                setPosStatusError(data?.error || data?.message || "Failed to fetch POS status");
+                setPosStatus(null);
+                return;
+            }
+
+            const parsed = data as AdminOrgPosStatusResponse;
+            setPosStatus(parsed?.data || null);
+        } catch (e) {
+            setPosStatusError(e instanceof Error ? e.message : "Failed to fetch POS status");
+            setPosStatus(null);
+        } finally {
+            setPosStatusLoading(false);
+        }
+    };
+
     useEffect(() => {
         load();
+        loadPosStatus();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orgId]);
+
+    const createOutlet = async (e: FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        const name = createName.trim();
+        const address = createAddress.trim();
+        const posOutletId = createPosOutletId.trim();
+
+        if (!name) {
+            showToast({ type: "error", message: "Outlet name is required" });
+            return;
+        }
+
+        setCreateLoading(true);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const body: Record<string, unknown> = { name };
+            if (address) body.address = address;
+            if (posOutletId) body.posOutletId = posOutletId;
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/outlets`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(body),
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                const code = data?.error;
+                if (code === "pos_outlet_id_in_use") {
+                    showToast({ type: "error", message: "This POS outlet ID is already mapped to another outlet in this organisation." });
+                    return;
+                }
+                showToast({ type: "error", message: data?.error || data?.message || "Failed to create outlet" });
+                return;
+            }
+
+            const parsed = data as AdminOutletCreateResponse;
+            const created = parsed?.data as AdminOutlet | undefined;
+            if (created) {
+                setOutlets((prev) => [created, ...prev]);
+                const createdId = getOutletId(created);
+                if (createdId) {
+                    setDraftById((prev) => ({ ...prev, [createdId]: typeof created.posOutletId === "string" ? created.posOutletId : "" }));
+                }
+            } else {
+                await load();
+            }
+
+            setCreateName("");
+            setCreateAddress("");
+            setCreatePosOutletId("");
+            showToast({ type: "success", message: "Outlet created" });
+            loadPosStatus();
+        } catch (e2) {
+            showToast({ type: "error", message: e2 instanceof Error ? e2.message : "Failed to create outlet" });
+        } finally {
+            setCreateLoading(false);
+        }
+    };
 
     const saveOutlet = async (outlet: AdminOutlet) => {
         const outletId = getOutletId(outlet);
@@ -133,6 +236,7 @@ export default function AdminOrgOutletsPage() {
 
         const raw = String(draftById[outletId] ?? "");
         const trimmed = raw.trim();
+
         if (!trimmed) {
             showToast({ type: "error", message: "POS Outlet ID must be a non-empty string" });
             return;
@@ -154,15 +258,69 @@ export default function AdminOrgOutletsPage() {
 
             const data = (await res.json().catch(() => ({}))) as any;
             if (!res.ok) {
+                const code = data?.error;
+                if (code === "pos_outlet_id_in_use") {
+                    showToast({ type: "error", message: "This POS outlet ID is already mapped to another outlet in this organisation." });
+                    return;
+                }
+                if (code === "not_found") {
+                    showToast({ type: "error", message: "Outlet not found (or does not belong to this organisation)." });
+                    return;
+                }
                 showToast({ type: "error", message: data?.error || data?.message || "Failed to save" });
                 return;
             }
 
-            setOutlets((prev) => prev.map((o) => (getOutletId(o) === outletId ? { ...o, posOutletId: trimmed } : o)));
-            setDraftById((prev) => ({ ...prev, [outletId]: trimmed }));
+            const nextValue = trimmed ? trimmed : "";
+            setOutlets((prev) => prev.map((o) => (getOutletId(o) === outletId ? { ...o, posOutletId: nextValue } : o)));
+            setDraftById((prev) => ({ ...prev, [outletId]: nextValue }));
             showToast({ type: "success", message: "POS Outlet ID saved" });
+            loadPosStatus();
         } catch (e) {
             showToast({ type: "error", message: e instanceof Error ? e.message : "Failed to save" });
+        } finally {
+            setSavingById((p) => ({ ...p, [outletId]: false }));
+        }
+    };
+
+    const clearOutletPosId = async (outlet: AdminOutlet) => {
+        const outletId = getOutletId(outlet);
+        if (!outletId) {
+            showToast({ type: "error", message: "Invalid outlet id" });
+            return;
+        }
+
+        setSavingById((p) => ({ ...p, [outletId]: true }));
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/outlets/${encodeURIComponent(outletId)}/pos`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ posOutletId: null }),
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                const code = data?.error;
+                if (code === "not_found") {
+                    showToast({ type: "error", message: "Outlet not found (or does not belong to this organisation)." });
+                    return;
+                }
+                showToast({ type: "error", message: data?.error || data?.message || "Failed to clear" });
+                return;
+            }
+
+            setOutlets((prev) => prev.map((o) => (getOutletId(o) === outletId ? { ...o, posOutletId: "" } : o)));
+            setDraftById((prev) => ({ ...prev, [outletId]: "" }));
+            showToast({ type: "success", message: "POS Outlet ID cleared" });
+            loadPosStatus();
+        } catch (e) {
+            showToast({ type: "error", message: e instanceof Error ? e.message : "Failed to clear" });
         } finally {
             setSavingById((p) => ({ ...p, [outletId]: false }));
         }
@@ -182,6 +340,9 @@ export default function AdminOrgOutletsPage() {
                         </Button>
                         <Button variant="outline" onClick={load} disabled={loading}>
                             Refresh
+                        </Button>
+                        <Button variant="outline" onClick={loadPosStatus} disabled={posStatusLoading}>
+                            POS Status
                         </Button>
                     </div>
                 </div>
@@ -212,21 +373,41 @@ export default function AdminOrgOutletsPage() {
                         </Badge>
                     </CardHeader>
                     <CardContent>
+                        <form onSubmit={createOutlet} className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-6">
+                            <div className="space-y-2">
+                                <Label htmlFor="createName">Name *</Label>
+                                <Input id="createName" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Outlet Name" disabled={createLoading} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="createAddress">Address</Label>
+                                <Input id="createAddress" value={createAddress} onChange={(e) => setCreateAddress(e.target.value)} placeholder="Optional address" disabled={createLoading} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="createPosOutletId">POS Outlet ID</Label>
+                                <Input id="createPosOutletId" value={createPosOutletId} onChange={(e) => setCreatePosOutletId(e.target.value)} placeholder="MerchantID001" disabled={createLoading} />
+                            </div>
+                            <div className="flex items-end justify-end">
+                                <Button type="submit" disabled={createLoading} className="gap-2">
+                                    {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                    Create Outlet
+                                </Button>
+                            </div>
+                        </form>
+
                         {loading ? (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
                                 Loading...
                             </div>
                         ) : outlets.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">
-                                No outlets found in the org payload. If the backend uses a different field name, we can map it.
-                            </p>
+                            <p className="text-sm text-muted-foreground">No outlets found.</p>
                         ) : (
                             <Table>
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Outlet</TableHead>
+                                        <TableHead>Address</TableHead>
                                         <TableHead className="w-[420px]">POS Outlet ID</TableHead>
                                         <TableHead className="text-right">Action</TableHead>
                                     </TableRow>
@@ -239,6 +420,7 @@ export default function AdminOrgOutletsPage() {
                                         const isSaving = Boolean(savingById[id]);
                                         const linked = saved.trim().length > 0;
                                         const canSave = !isSaving && draft.trim().length > 0 && draft.trim() !== saved.trim();
+                                        const canClear = !isSaving && saved.trim().length > 0;
 
                                         return (
                                             <TableRow key={id || Math.random()}>
@@ -259,10 +441,11 @@ export default function AdminOrgOutletsPage() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="space-y-1">
-                                                        <div className="font-medium">{o.displayName || o.name || id}</div>
+                                                        <div className="font-medium">{o.name || o.displayName || id}</div>
                                                         <div className="text-xs text-muted-foreground">Outlet ID: {id || "—"}</div>
                                                     </div>
                                                 </TableCell>
+                                                <TableCell className="text-sm">{o.address || ""}</TableCell>
                                                 <TableCell>
                                                     <div className="space-y-2">
                                                         <Label>POS Outlet ID</Label>
@@ -276,21 +459,100 @@ export default function AdminOrgOutletsPage() {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => saveOutlet(o)}
-                                                        disabled={!canSave}
-                                                        className="gap-2"
-                                                    >
-                                                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                                        Save
-                                                    </Button>
+                                                    <div className="flex justify-end gap-2">
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => saveOutlet(o)}
+                                                            disabled={!canSave}
+                                                            className="gap-2"
+                                                        >
+                                                            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                                            Save
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => clearOutletPosId(o)}
+                                                            disabled={!canClear}
+                                                        >
+                                                            Clear
+                                                        </Button>
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
                                         );
                                     })}
                                 </TableBody>
                             </Table>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle>POS Status / Diagnostics</CardTitle>
+                        <Badge variant="outline" className="capitalize">{posStatus?.status || "—"}</Badge>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {posStatusLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Loading...
+                            </div>
+                        ) : posStatusError ? (
+                            <p className="text-sm text-destructive" role="alert">
+                                {posStatusError}
+                            </p>
+                        ) : !posStatus ? (
+                            <p className="text-sm text-muted-foreground">No POS status data.</p>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                    <div>
+                                        <div className="text-muted-foreground">Last ingested</div>
+                                        <div className="font-medium">{posStatus.lastIngestedAt ? new Date(posStatus.lastIngestedAt).toLocaleString() : "—"}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Unmapped outlets</div>
+                                        <div className="font-medium">{String(posStatus.unmappedOutletsCount ?? "—")}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Last error</div>
+                                        <div className="font-medium">{posStatus.error || "—"}</div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-sm font-medium mb-2">Mapped outlets</div>
+                                    {posStatus.mappedOutlets?.length ? (
+                                        <div className="space-y-1 text-sm">
+                                            {posStatus.mappedOutlets.map((m) => (
+                                                <div key={m._id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                                                    <div className="font-medium">{m.name}</div>
+                                                    <div className="text-muted-foreground">{m.posOutletId}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">No mapped outlets reported.</p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <div className="text-sm font-medium mb-2">Last rejected order</div>
+                                    {posStatus.lastRejectedOrder ? (
+                                        <div className="rounded-md border p-3 text-sm space-y-1">
+                                            <div><span className="text-muted-foreground">At:</span> {new Date(posStatus.lastRejectedOrder.at).toLocaleString()}</div>
+                                            <div><span className="text-muted-foreground">Reason:</span> {posStatus.lastRejectedOrder.reason}</div>
+                                            <div><span className="text-muted-foreground">outletId:</span> {posStatus.lastRejectedOrder.outletId}</div>
+                                            <div><span className="text-muted-foreground">transactionId:</span> {posStatus.lastRejectedOrder.transactionId}</div>
+                                            <div><span className="text-muted-foreground">restaurantId:</span> {posStatus.lastRejectedOrder.restaurantId}</div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">None</p>
+                                    )}
+                                </div>
+                            </>
                         )}
                     </CardContent>
                 </Card>

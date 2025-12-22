@@ -10,6 +10,7 @@ import {
   Gift,
   BarChart3,
   Users,
+  ReceiptText,
   Menu,
   X,
   ChevronLeft,
@@ -64,6 +65,11 @@ const navItems: NavItem[] = [
     title: "Monitor",
     href: "/monitor",
     icon: Users,
+  },
+  {
+    title: "Orders",
+    href: "/orders",
+    icon: ReceiptText,
   },
   {
     title: "Settings",
