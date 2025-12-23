@@ -8,11 +8,8 @@ function getUserAuthHeaders(request: NextRequest): Record<string, string> | null
     const authorization = request.headers.get('authorization');
     if (!authorization) return null;
 
-    const orgId = request.headers.get('x-org-id');
-
     return {
         Authorization: authorization,
-        ...(orgId ? { 'X-ORG-ID': orgId } : {}),
     };
 }
 
@@ -29,15 +26,12 @@ function buildBackendUrl(pathname: string, request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     const backendUrl = new URL(pathname, getBackendBaseUrl());
-    backendUrl.searchParams.set('limit', '50');
 
-    const outletId = searchParams.get('outletId');
-    const fromDate = searchParams.get('fromDate');
-    const toDate = searchParams.get('toDate');
+    const limit = searchParams.get('limit') || '50';
+    backendUrl.searchParams.set('limit', limit);
 
-    if (outletId) backendUrl.searchParams.set('outletId', outletId);
-    if (fromDate) backendUrl.searchParams.set('fromDate', fromDate);
-    if (toDate) backendUrl.searchParams.set('toDate', toDate);
+    const cursor = searchParams.get('cursor');
+    if (cursor) backendUrl.searchParams.set('cursor', cursor);
 
     return backendUrl;
 }
@@ -48,7 +42,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const candidatePaths = ['/api/orders', '/api/pos/orders', '/api/admin/orders'];
+    const candidatePaths = ['/api/orders', '/api/v1/orders'];
 
     for (const pathname of candidatePaths) {
         const backendUrl = buildBackendUrl(pathname, request);
@@ -69,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-        { error: 'Orders endpoint not found on backend. Tried: /api/orders, /api/pos/orders, /api/admin/orders' },
+        { error: 'Orders endpoint not found on backend. Tried: /api/orders, /api/v1/orders' },
         { status: 502 }
     );
 }
