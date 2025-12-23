@@ -42,17 +42,45 @@ export interface AdminOutletPosUpdateResponse {
 export interface AdminOrgPosStatusResponse {
     success: boolean;
     data: {
-        status: 'active' | 'paused' | 'error' | string;
-        lastIngestedAt: string | null;
-        error: string | null;
-        mappedOutlets: Array<{ _id: string; name: string; posOutletId: string }>;
-        unmappedOutletsCount: number;
-        lastRejectedOrder: {
-            at: string;
-            reason: string;
-            outletId: string;
-            transactionId: string;
-            restaurantId: string;
+        status?: 'active' | 'paused' | 'error' | string;
+        error?: string | null;
+
+        merchantId?: string;
+        restaurantId?: string;
+
+        lastIngestedAt?: string | null;
+
+        container?: {
+            lastRunAt?: string | null;
+            lastFetchAt?: string | null;
+            lastFetchedCount?: number;
+            lastIngestedCount?: number;
+            lastDuplicateCount?: number;
+            lastRejectedCount?: number;
+            lastAckedCount?: number;
+            lastDeleteFailedCount?: number;
+        };
+
+        poison?: {
+            pendingCount?: number;
+            rejectedCount?: number;
+            lastError?: {
+                error?: string;
+                transactionId?: string;
+                outletId?: string;
+                attempts?: number;
+            } | null;
+        };
+
+        mappedOutlets?: Array<{ _id: string; name: string; posOutletId: string }>;
+        unmappedOutletsCount?: number;
+
+        lastRejectedOrder?: {
+            at?: string;
+            reason?: string;
+            outletId?: string;
+            transactionId?: string;
+            restaurantId?: string;
         } | null;
     };
 }

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import type { AdminOrgPosStatusResponse } from "@/lib/types/admin-outlets";
 
 type OrgDetailsResponse = {
     success: boolean;
@@ -32,7 +33,6 @@ type OrgDetailsResponse = {
             tokenStatus?: string;
             dedicated?: unknown;
         };
-
     };
 };
 
@@ -62,6 +62,19 @@ export default function AdminOrgDetailsPage() {
     const [generatingAccessCode, setGeneratingAccessCode] = useState(false);
     const [accessError, setAccessError] = useState<string | null>(null);
     const [accessResult, setAccessResult] = useState<{ accessCode: string; expiresAt?: string; email?: string } | null>(null);
+
+    const [posRestaurantId, setPosRestaurantId] = useState("");
+    const [posSaving, setPosSaving] = useState(false);
+    const [posError, setPosError] = useState<string | null>(null);
+    const [posOk, setPosOk] = useState<string | null>(null);
+
+    const [posStatus, setPosStatus] = useState<AdminOrgPosStatusResponse["data"] | null>(null);
+    const [posStatusLoading, setPosStatusLoading] = useState(false);
+    const [posStatusError, setPosStatusError] = useState<string | null>(null);
+
+    const [posSyncLoading, setPosSyncLoading] = useState(false);
+    const [posSyncError, setPosSyncError] = useState<string | null>(null);
+    const [posSyncOk, setPosSyncOk] = useState<string | null>(null);
 
     const load = async () => {
         setLoading(true);
@@ -113,6 +126,41 @@ export default function AdminOrgDetailsPage() {
             setOrg(null);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadPosStatus = async () => {
+        setPosStatusLoading(true);
+        setPosStatusError(null);
+        try {
+            const token = getAuthToken();
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/pos/status`, {
+                method: "GET",
+                headers: {
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                if (res.status === 401) {
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    return;
+                }
+                setPosStatusError(data?.error || data?.message || "Failed to fetch POS status");
+                setPosStatus(null);
+                return;
+            }
+
+            const parsed = data as AdminOrgPosStatusResponse;
+            setPosStatus(parsed?.data || null);
+            setPosRestaurantId(typeof parsed?.data?.restaurantId === "string" ? parsed.data.restaurantId : "");
+        } catch (e) {
+            setPosStatusError(e instanceof Error ? e.message : "Failed to fetch POS status");
+            setPosStatus(null);
+        } finally {
+            setPosStatusLoading(false);
         }
     };
 
@@ -286,7 +334,91 @@ export default function AdminOrgDetailsPage() {
     useEffect(() => {
         setSelectedOrgId(orgId);
         load();
+        loadPosStatus();
     }, [orgId]);
+
+    const onSavePosConfigure = async (e: FormEvent) => {
+        e.preventDefault();
+        setPosOk(null);
+        setPosError(null);
+
+        const restaurantId = posRestaurantId.trim();
+        if (!restaurantId) {
+            setPosError("Restaurant ID is required");
+            return;
+        }
+
+        setPosSaving(true);
+        try {
+            const token = getAuthToken();
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/pos/configure`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ restaurantId }),
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                if (res.status === 401) {
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    return;
+                }
+                if (res.status === 403) {
+                    setPosError("Admin access required");
+                    return;
+                }
+                setPosError(data?.error || data?.message || "Failed to configure POS");
+                return;
+            }
+
+            setPosOk("POS configuration saved");
+            await loadPosStatus();
+        } catch (err) {
+            setPosError(err instanceof Error ? err.message : "Failed to configure POS");
+        } finally {
+            setPosSaving(false);
+        }
+    };
+
+    const onSyncNow = async () => {
+        setPosSyncOk(null);
+        setPosSyncError(null);
+        setPosSyncLoading(true);
+
+        try {
+            const token = getAuthToken();
+
+            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/pos/sync`, {
+                method: "POST",
+                headers: {
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+            });
+
+            const data = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                if (res.status === 401) {
+                    clearAuth();
+                    router.replace(`/login?reason=session_expired&next=${encodeURIComponent(`/admin/orgs/${orgId}`)}`);
+                    return;
+                }
+                setPosSyncError(data?.error || data?.message || "Failed to sync");
+                return;
+            }
+
+            setPosSyncOk("Sync triggered");
+            await loadPosStatus();
+        } catch (err) {
+            setPosSyncError(err instanceof Error ? err.message : "Failed to sync");
+        } finally {
+            setPosSyncLoading(false);
+        }
+    };
 
     const onUpdatePhone = async (e: FormEvent) => {
         e.preventDefault();
@@ -380,6 +512,195 @@ export default function AdminOrgDetailsPage() {
 
                 {org && (
                     <>
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between">
+                                <CardTitle>POS Configuration (ConnectNow)</CardTitle>
+                                <Button variant="outline" onClick={loadPosStatus} disabled={posStatusLoading}>
+                                    {posStatusLoading ? "Refreshing..." : "Refresh"}
+                                </Button>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <form onSubmit={onSavePosConfigure} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="restaurantId">Restaurant ID</Label>
+                                        <Input
+                                            id="restaurantId"
+                                            value={posRestaurantId}
+                                            onChange={(e) => setPosRestaurantId(e.target.value)}
+                                            placeholder="220006"
+                                            disabled={posSaving}
+                                            required
+                                        />
+                                    </div>
+
+                                    <p className="text-xs text-muted-foreground">
+                                        Merchant ID = orgId ({orgId}). ConnectNow OutletId/outletid must equal Merchant ID.
+                                    </p>
+
+                                    {posError && (
+                                        <p className="text-sm text-destructive" role="alert">
+                                            {posError}
+                                        </p>
+                                    )}
+
+                                    {posOk && !posError && (
+                                        <p className="text-sm text-muted-foreground" role="status">
+                                            {posOk}
+                                        </p>
+                                    )}
+
+                                    <div className="flex justify-end">
+                                        <Button type="submit" disabled={posSaving}>
+                                            {posSaving ? "Saving..." : "Save"}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between">
+                                <CardTitle>POS Diagnostics (ConnectNow)</CardTitle>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={onSyncNow}
+                                        disabled={posSyncLoading || posStatusLoading || posStatus?.status !== "active"}
+                                    >
+                                        {posSyncLoading ? "Syncing..." : "Sync Now"}
+                                    </Button>
+                                    <Button variant="outline" onClick={loadPosStatus} disabled={posStatusLoading || posSyncLoading}>
+                                        {posStatusLoading ? "Refreshing..." : "Refresh"}
+                                    </Button>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <p className="text-xs text-muted-foreground">
+                                    Sync Now triggers the backend container consumer job server-side. It is enabled only when integration status is active.
+                                </p>
+
+                                {posSyncError && (
+                                    <p className="text-sm text-destructive" role="alert">
+                                        {posSyncError}
+                                    </p>
+                                )}
+
+                                {posSyncOk && !posSyncError && (
+                                    <p className="text-sm text-muted-foreground" role="status">
+                                        {posSyncOk}
+                                    </p>
+                                )}
+
+                                {posStatusLoading ? (
+                                    <p className="text-sm text-muted-foreground">Loading...</p>
+                                ) : posStatusError ? (
+                                    <p className="text-sm text-destructive" role="alert">
+                                        {posStatusError}
+                                    </p>
+                                ) : !posStatus ? (
+                                    <p className="text-sm text-muted-foreground">No POS status data.</p>
+                                ) : (
+                                    <>
+                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
+                                            <div>
+                                                <div className="text-muted-foreground">Merchant ID</div>
+                                                <div className="font-medium">{posStatus.merchantId || orgId}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-muted-foreground">Restaurant ID</div>
+                                                <div className="font-medium">{posStatus.restaurantId || "—"}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-muted-foreground">Status</div>
+                                                <div className="font-medium">{posStatus.status || "—"}</div>
+                                            </div>
+                                        </div>
+
+                                        <p className="text-xs text-muted-foreground">
+                                            ConnectNow OutletId/outletid must equal Merchant ID (orgId).
+                                        </p>
+
+                                        <div>
+                                            <div className="text-sm font-medium mb-2">Container consumer metrics</div>
+                                            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
+                                                <div>
+                                                    <div className="text-muted-foreground">lastRunAt</div>
+                                                    <div className="font-medium">{posStatus.container?.lastRunAt ? new Date(posStatus.container.lastRunAt).toLocaleString() : "—"}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastFetchAt</div>
+                                                    <div className="font-medium">{posStatus.container?.lastFetchAt ? new Date(posStatus.container.lastFetchAt).toLocaleString() : "—"}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastFetchedCount</div>
+                                                    <div className="font-medium">{String(posStatus.container?.lastFetchedCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastIngestedCount</div>
+                                                    <div className="font-medium">{String(posStatus.container?.lastIngestedCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastDuplicateCount</div>
+                                                    <div className="font-medium">{String(posStatus.container?.lastDuplicateCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastRejectedCount</div>
+                                                    <div className="font-medium">{String(posStatus.container?.lastRejectedCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastAckedCount</div>
+                                                    <div className="font-medium">{String(posStatus.container?.lastAckedCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastDeleteFailedCount</div>
+                                                    <div className="font-medium">{String(posStatus.container?.lastDeleteFailedCount ?? "—")}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="text-sm font-medium mb-2">Poison tracking</div>
+                                            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
+                                                <div>
+                                                    <div className="text-muted-foreground">pendingCount</div>
+                                                    <div className="font-medium">{String(posStatus.poison?.pendingCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">rejectedCount</div>
+                                                    <div className="font-medium">{String(posStatus.poison?.rejectedCount ?? "—")}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">lastError</div>
+                                                    <div className="font-medium">{posStatus.poison?.lastError?.error || "—"}</div>
+                                                </div>
+                                            </div>
+                                            {posStatus.poison?.lastError ? (
+                                                <div className="rounded-md border p-3 text-sm space-y-1 mt-3">
+                                                    <div><span className="text-muted-foreground">transactionId:</span> {posStatus.poison.lastError.transactionId || "—"}</div>
+                                                    <div><span className="text-muted-foreground">outletId:</span> {posStatus.poison.lastError.outletId || "—"}</div>
+                                                    <div><span className="text-muted-foreground">attempts:</span> {String(posStatus.poison.lastError.attempts ?? "—")}</div>
+                                                </div>
+                                            ) : null}
+                                        </div>
+
+                                        <div>
+                                            <div className="text-sm font-medium mb-2">Last rejected order</div>
+                                            {posStatus.lastRejectedOrder ? (
+                                                <div className="rounded-md border p-3 text-sm space-y-1">
+                                                    <div><span className="text-muted-foreground">At:</span> {posStatus.lastRejectedOrder.at ? new Date(posStatus.lastRejectedOrder.at).toLocaleString() : "—"}</div>
+                                                    <div><span className="text-muted-foreground">Reason:</span> {posStatus.lastRejectedOrder.reason || "—"}</div>
+                                                    <div><span className="text-muted-foreground">outletId:</span> {posStatus.lastRejectedOrder.outletId || "—"}</div>
+                                                    <div><span className="text-muted-foreground">transactionId:</span> {posStatus.lastRejectedOrder.transactionId || "—"}</div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-muted-foreground">None</p>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </CardContent>
+                        </Card>
+
                         <Card>
                             <CardHeader>
                                 <CardTitle>Access Code</CardTitle>

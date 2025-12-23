@@ -20,6 +20,14 @@ It is intentionally **code-accurate**:
 > Purpose: This section documents the minimal, reliable wiring needed to get POS bills flowing into Mongo and visible in the `/orders` UI.
 > This is a DEBUG / VERIFICATION tool (not analytics).
 
+### ConnectNow mode (important contract)
+
+- `restaurantid` / `Clientid` = **Restaurant ID** (configured in Admin UI)
+- `outletid` / `OutletId` = **Merchant ID**, and in our system **Merchant ID = orgId**
+- Therefore:
+  - Admin config is **restaurantId only**
+  - There is **no per-outlet mapping requirement** for ConnectNow polling mode
+
 ### Base URL
 
 - **Backend base URL stays env-driven:**
@@ -113,7 +121,17 @@ It is intentionally **code-accurate**:
 - **Backend route:** `POST /api/admin/org/:orgId/user`
 - **Headers forwarded:** `Content-Type`, `X-ORG-ID`, admin auth
 
-### 3.2.1 Admin POS diagnostics (single pane of glass)
+### 3.2.1 Admin POS configuration (ConnectNow restaurantId)
+
+**File:** `app/api/admin/org/[orgId]/pos/configure/route.ts`
+
+- **Frontend route:** `POST /api/admin/org/:orgId/pos/configure`
+- **Backend route:** `POST /api/admin/org/:orgId/pos/configure`
+- **Auth:** admin
+- **Headers forwarded:** `Content-Type`, `X-ORG-ID`, admin auth
+- **Body:** `{ "restaurantId": "220006" }`
+
+### 3.2.2 Admin POS diagnostics (single pane of glass)
 
 **File:** `app/api/admin/org/[orgId]/pos/status/route.ts`
 
@@ -124,12 +142,22 @@ It is intentionally **code-accurate**:
 
 Used to debug:
 
-- Outlet mapping status (mapped list + unmapped count)
+- Outlet mapping status (legacy / not applicable in ConnectNow polling mode)
 - Last rejected order (transaction + outlet)
 - Container consumer metrics (fetched/ingested/duplicate/rejected, timestamps)
 - Poison / invalid bills tracking
 
-### 3.2.2 Admin outlet mapping (required for strict ingestion)
+### 3.2.4 Admin "Sync Now" (server-side cron trigger)
+
+**File:** `app/api/admin/org/[orgId]/pos/sync/route.ts`
+
+- **Frontend route:** `POST /api/admin/org/:orgId/pos/sync`
+- **Backend route:** `POST /api/cron/pos/container-consume`
+- **Auth:** admin
+- **Secret handling:** injected server-side from env (not sent from browser)
+- **Required env var (frontend runtime):** `POS_CONTAINER_CRON_SECRET` (fallbacks supported: `CRON_SECRET`, `X_CRON_SECRET`)
+
+### 3.2.3 Admin outlet mapping (legacy)
 
 **List + Create outlets**
 
@@ -147,7 +175,8 @@ Used to debug:
 
 Important rule:
 
-- POS bills are accepted only if incoming bill `outletId` matches an outlet's configured `posOutletId` **within the org**.
+- In ConnectNow polling mode, outlet mapping is **not required**.
+- `mappedOutlets` may be `[]` and `unmappedOutletsCount` may be `0` and should be treated as **not applicable**.
 
 ### 3.3 Admin WhatsApp configuration
 
@@ -284,6 +313,7 @@ Order {
 
 **Important:**
 - Do not call this from a public browser UI unless you are comfortable exposing the cron secret.
+- Prefer using `POST /api/admin/org/:orgId/pos/sync` from the admin UI, which injects the secret server-side.
 
 ---
 

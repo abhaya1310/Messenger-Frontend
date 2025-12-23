@@ -367,12 +367,14 @@ export default function AdminOrgOutletsPage() {
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle>Outlet POS Linkage</CardTitle>
-                        <Badge variant="outline">
-                            {linkedCount} of {outlets.length} outlets linked to POS
-                        </Badge>
+                        <CardTitle>Outlet POS Mapping (Legacy)</CardTitle>
+                        <Badge variant="outline">Optional</Badge>
                     </CardHeader>
                     <CardContent>
+                        <p className="text-sm text-muted-foreground mb-6">
+                            ConnectNow polling mode does not require per-outlet mapping. Configure Restaurant ID and verify Merchant ID (orgId) via POS Diagnostics.
+                        </p>
+
                         <form onSubmit={createOutlet} className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-6">
                             <div className="space-y-2">
                                 <Label htmlFor="createName">Name *</Label>
@@ -509,44 +511,103 @@ export default function AdminOrgOutletsPage() {
                             <>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                     <div>
+                                        <div className="text-muted-foreground">Merchant ID</div>
+                                        <div className="font-medium">{posStatus.merchantId || orgId}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Restaurant ID</div>
+                                        <div className="font-medium">{posStatus.restaurantId || "—"}</div>
+                                    </div>
+                                    <div>
                                         <div className="text-muted-foreground">Last ingested</div>
                                         <div className="font-medium">{posStatus.lastIngestedAt ? new Date(posStatus.lastIngestedAt).toLocaleString() : "—"}</div>
                                     </div>
-                                    <div>
-                                        <div className="text-muted-foreground">Unmapped outlets</div>
-                                        <div className="font-medium">{String(posStatus.unmappedOutletsCount ?? "—")}</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-muted-foreground">Last error</div>
-                                        <div className="font-medium">{posStatus.error || "—"}</div>
+                                </div>
+
+                                <p className="text-xs text-muted-foreground">
+                                    ConnectNow OutletId/outletid must equal Merchant ID (orgId).
+                                </p>
+
+                                <div>
+                                    <div className="text-sm font-medium mb-2">Container consumer metrics</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                        <div>
+                                            <div className="text-muted-foreground">lastRunAt</div>
+                                            <div className="font-medium">{posStatus.container?.lastRunAt ? new Date(posStatus.container.lastRunAt).toLocaleString() : "—"}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastFetchAt</div>
+                                            <div className="font-medium">{posStatus.container?.lastFetchAt ? new Date(posStatus.container.lastFetchAt).toLocaleString() : "—"}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastFetchedCount</div>
+                                            <div className="font-medium">{String(posStatus.container?.lastFetchedCount ?? "—")}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastIngestedCount</div>
+                                            <div className="font-medium">{String(posStatus.container?.lastIngestedCount ?? "—")}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastDuplicateCount</div>
+                                            <div className="font-medium">{String(posStatus.container?.lastDuplicateCount ?? "—")}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastRejectedCount</div>
+                                            <div className="font-medium">{String(posStatus.container?.lastRejectedCount ?? "—")}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastAckedCount</div>
+                                            <div className="font-medium">{String(posStatus.container?.lastAckedCount ?? "—")}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastDeleteFailedCount</div>
+                                            <div className="font-medium">{String(posStatus.container?.lastDeleteFailedCount ?? "—")}</div>
+                                        </div>
                                     </div>
                                 </div>
 
                                 <div>
-                                    <div className="text-sm font-medium mb-2">Mapped outlets</div>
-                                    {posStatus.mappedOutlets?.length ? (
-                                        <div className="space-y-1 text-sm">
-                                            {posStatus.mappedOutlets.map((m) => (
-                                                <div key={m._id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                                                    <div className="font-medium">{m.name}</div>
-                                                    <div className="text-muted-foreground">{m.posOutletId}</div>
-                                                </div>
-                                            ))}
+                                    <div className="text-sm font-medium mb-2">Poison tracking</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                        <div>
+                                            <div className="text-muted-foreground">pendingCount</div>
+                                            <div className="font-medium">{String(posStatus.poison?.pendingCount ?? "—")}</div>
                                         </div>
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground">No mapped outlets reported.</p>
-                                    )}
+                                        <div>
+                                            <div className="text-muted-foreground">rejectedCount</div>
+                                            <div className="font-medium">{String(posStatus.poison?.rejectedCount ?? "—")}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-muted-foreground">lastError</div>
+                                            <div className="font-medium">{posStatus.poison?.lastError?.error || "—"}</div>
+                                        </div>
+                                    </div>
+                                    {posStatus.poison?.lastError ? (
+                                        <div className="rounded-md border p-3 text-sm space-y-1 mt-3">
+                                            <div><span className="text-muted-foreground">transactionId:</span> {posStatus.poison.lastError.transactionId || "—"}</div>
+                                            <div><span className="text-muted-foreground">outletId:</span> {posStatus.poison.lastError.outletId || "—"}</div>
+                                            <div><span className="text-muted-foreground">attempts:</span> {String(posStatus.poison.lastError.attempts ?? "—")}</div>
+                                        </div>
+                                    ) : null}
                                 </div>
+
+                                {posStatus.mappedOutlets?.length || (posStatus.unmappedOutletsCount ?? 0) > 0 ? (
+                                    <div>
+                                        <div className="text-sm font-medium mb-2">Outlet mapping (legacy)</div>
+                                        <p className="text-sm text-muted-foreground">
+                                            ConnectNow mode does not require outlet mapping. If present, this is legacy and not used for ConnectNow polling.
+                                        </p>
+                                    </div>
+                                ) : null}
 
                                 <div>
                                     <div className="text-sm font-medium mb-2">Last rejected order</div>
                                     {posStatus.lastRejectedOrder ? (
                                         <div className="rounded-md border p-3 text-sm space-y-1">
-                                            <div><span className="text-muted-foreground">At:</span> {new Date(posStatus.lastRejectedOrder.at).toLocaleString()}</div>
-                                            <div><span className="text-muted-foreground">Reason:</span> {posStatus.lastRejectedOrder.reason}</div>
-                                            <div><span className="text-muted-foreground">outletId:</span> {posStatus.lastRejectedOrder.outletId}</div>
-                                            <div><span className="text-muted-foreground">transactionId:</span> {posStatus.lastRejectedOrder.transactionId}</div>
-                                            <div><span className="text-muted-foreground">restaurantId:</span> {posStatus.lastRejectedOrder.restaurantId}</div>
+                                            <div><span className="text-muted-foreground">At:</span> {posStatus.lastRejectedOrder.at ? new Date(posStatus.lastRejectedOrder.at).toLocaleString() : "—"}</div>
+                                            <div><span className="text-muted-foreground">Reason:</span> {posStatus.lastRejectedOrder.reason || "—"}</div>
+                                            <div><span className="text-muted-foreground">outletId:</span> {posStatus.lastRejectedOrder.outletId || "—"}</div>
+                                            <div><span className="text-muted-foreground">transactionId:</span> {posStatus.lastRejectedOrder.transactionId || "—"}</div>
                                         </div>
                                     ) : (
                                         <p className="text-sm text-muted-foreground">None</p>
