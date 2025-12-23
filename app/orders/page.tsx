@@ -49,6 +49,9 @@ export default function OrdersPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [orders, setOrders] = useState<Order[]>([]);
+    const [refreshLoading, setRefreshLoading] = useState(false);
+    const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+    const [refreshError, setRefreshError] = useState<string | null>(null);
 
     const rows = useMemo(() => {
         if (!Array.isArray(orders)) return [];
@@ -94,6 +97,57 @@ export default function OrdersPage() {
         }
     };
 
+    const onFetchLatest = async () => {
+        setRefreshLoading(true);
+        setRefreshMessage(null);
+        setRefreshError(null);
+
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                throw new Error("Unauthorized");
+            }
+
+            const orgId = getCurrentOrgId();
+
+            const res = await fetch("/api/orders/refresh", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    ...(orgId ? { "X-ORG-ID": orgId } : {}),
+                },
+            });
+
+            const json = (await res.json().catch(() => ({}))) as any;
+            if (!res.ok) {
+                setRefreshError(json?.error || json?.message || "Failed to fetch latest orders. Please try again.");
+                return;
+            }
+
+            const parts: string[] = [];
+            const maybeNumber = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+            const integrations = maybeNumber(json?.integrations);
+            const fetched = maybeNumber(json?.fetched);
+            const ingested = maybeNumber(json?.ingested);
+            const rejected = maybeNumber(json?.rejected);
+            const acked = maybeNumber(json?.acked);
+            const deleteFailed = maybeNumber(json?.deleteFailed);
+            if (integrations !== undefined) parts.push(`integrations=${integrations}`);
+            if (fetched !== undefined) parts.push(`fetched=${fetched}`);
+            if (ingested !== undefined) parts.push(`ingested=${ingested}`);
+            if (rejected !== undefined) parts.push(`rejected=${rejected}`);
+            if (acked !== undefined) parts.push(`acked=${acked}`);
+            if (deleteFailed !== undefined) parts.push(`deleteFailed=${deleteFailed}`);
+
+            setRefreshMessage(parts.length ? `Triggered fetch latest (${parts.join(", ")}).` : "Triggered fetch latest.");
+            await loadOrders();
+        } catch (e) {
+            setRefreshError(e instanceof Error ? e.message : "Failed to fetch latest orders. Please try again.");
+        } finally {
+            setRefreshLoading(false);
+        }
+    };
+
     useEffect(() => {
         loadOrders();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,12 +162,23 @@ export default function OrdersPage() {
                         <p className="text-sm text-muted-foreground">Recent bills received from POS (latest first)</p>
                     </div>
                     <div className="flex gap-2">
+                        <Button onClick={onFetchLatest} disabled={loading || refreshLoading} className="gap-2">
+                            {refreshLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                            Fetch Latest
+                        </Button>
                         <Button variant="outline" onClick={loadOrders} disabled={loading} className="gap-2">
                             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                             Refresh
                         </Button>
                     </div>
                 </div>
+
+                {refreshMessage ? <p className="text-sm text-muted-foreground">{refreshMessage}</p> : null}
+                {refreshError ? (
+                    <p className="text-sm text-destructive" role="alert">
+                        {refreshError}
+                    </p>
+                ) : null}
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between">
