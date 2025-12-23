@@ -17,6 +17,12 @@ export interface Order {
     transactionId?: string;
     createdAt?: string;
 
+    outletId?: string;
+    outletName?: string;
+
+    guestName?: string;
+    guestPhone?: string;
+
     outlet?: OrderOutlet;
     guest?: OrderGuest;
 

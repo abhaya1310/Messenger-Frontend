@@ -154,10 +154,11 @@ export default function OrdersPage() {
                                 <TableBody>
                                     {rows.map((o, index) => {
                                         const id = getOrderId(o, index);
-                                        const outletName = o.outlet?.name || o.outlet?.id || "Unknown Outlet";
+                                        const outletLabel = o.outletName || o.outlet?.name || o.outletId || o.outlet?.id || "Unknown Outlet";
                                         const outletPosId = o.outlet?.posOutletId;
-                                        const guestName = o.guest?.name;
-                                        const guestPhone = o.guest?.phone;
+                                        const guestName = o.guestName || o.guest?.name;
+                                        const guestPhone = o.guestPhone || o.guest?.phone;
+                                        const guestLabel = guestName || guestPhone || "Anonymous";
 
                                         return (
                                             <TableRow key={id}>
@@ -165,13 +166,13 @@ export default function OrdersPage() {
                                                 <TableCell className="font-mono text-xs">{o.transactionId || "—"}</TableCell>
                                                 <TableCell>
                                                     <div className="space-y-1">
-                                                        <div className="font-medium">{outletName}</div>
+                                                        <div className="font-medium">{outletLabel}</div>
                                                         <div className="text-xs text-muted-foreground">POS: {outletPosId || "—"}</div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="space-y-1">
-                                                        <div className="font-medium">{guestName || "Anonymous"}</div>
+                                                        <div className="font-medium">{guestLabel}</div>
                                                         <div className="text-xs text-muted-foreground">{guestPhone || "—"}</div>
                                                     </div>
                                                 </TableCell>
