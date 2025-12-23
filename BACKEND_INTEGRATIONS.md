@@ -23,10 +23,10 @@ It is intentionally **code-accurate**:
 ### ConnectNow mode (important contract)
 
 - `restaurantid` / `Clientid` = **Restaurant ID** (configured in Admin UI)
-- `outletid` / `OutletId` = **Outlet ID** (must be mapped per outlet in Admin UI)
+- `outletid` / `OutletId` = **Expected OutletId**
 - Therefore:
-  - Admin config is **restaurantId only**
-  - Per-outlet mapping is **required for ingestion** (each outlet must have `posOutletId` set to the exact ConnectNow `outletId`)
+  - Admin config is **restaurantId** plus optional `connectNowMerchantId`
+  - Backend consumer queries: `GET /api/order?restaurantid=<restaurantId>&outletid=<expectedOutletId>`
 
 ### Base URL
 
@@ -130,6 +130,7 @@ It is intentionally **code-accurate**:
 - **Auth:** admin
 - **Headers forwarded:** `Content-Type`, `X-ORG-ID`, admin auth
 - **Body:** `{ "restaurantId": "220006" }`
+- **Optional:** `{ "restaurantId": "220006", "connectNowMerchantId": "MerchantID001" }`
 
 ### 3.2.2 Admin POS diagnostics (single pane of glass)
 
@@ -142,7 +143,7 @@ It is intentionally **code-accurate**:
 
 Used to debug:
 
-- Outlet mapping status (required for ingestion)
+- Expected OutletId + consumer metrics
 - Last rejected order (transaction + outlet)
 - Container consumer metrics (fetched/ingested/duplicate/rejected, timestamps)
 - Poison / invalid bills tracking

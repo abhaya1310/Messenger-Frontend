@@ -528,6 +528,17 @@ export default function AdminOrgOutletsPage() {
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                     <div>
+                                        <div className="text-muted-foreground">Expected OutletId</div>
+                                        <div className="font-medium">{posStatus.expectedOutletId || "—"}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">connectNowMerchantId</div>
+                                        <div className="font-medium">{posStatus.connectNowMerchantId || "—"}</div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                    <div>
                                         <div className="text-muted-foreground">Mapped outlets</div>
                                         <div className="font-medium">{String(posStatus.mappedOutlets?.length ?? 0)}</div>
                                     </div>
@@ -554,7 +565,7 @@ export default function AdminOrgOutletsPage() {
                                 </div>
 
                                 <p className="text-xs text-muted-foreground">
-                                    ConnectNow OutletId must match the Outlet ID you saved for each outlet.
+                                    ConnectNow side must insert orders with outlet_id equal to Expected OutletId.
                                 </p>
 
                                 <div>

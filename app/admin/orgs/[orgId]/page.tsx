@@ -64,6 +64,8 @@ export default function AdminOrgDetailsPage() {
     const [accessResult, setAccessResult] = useState<{ accessCode: string; expiresAt?: string; email?: string } | null>(null);
 
     const [posRestaurantId, setPosRestaurantId] = useState("");
+    const [posConnectNowMerchantId, setPosConnectNowMerchantId] = useState("");
+    const [posShowAdvanced, setPosShowAdvanced] = useState(false);
     const [posSaving, setPosSaving] = useState(false);
     const [posError, setPosError] = useState<string | null>(null);
     const [posOk, setPosOk] = useState<string | null>(null);
@@ -156,6 +158,9 @@ export default function AdminOrgDetailsPage() {
             const parsed = data as AdminOrgPosStatusResponse;
             setPosStatus(parsed?.data || null);
             setPosRestaurantId(typeof parsed?.data?.restaurantId === "string" ? parsed.data.restaurantId : "");
+            setPosConnectNowMerchantId(
+                typeof parsed?.data?.connectNowMerchantId === "string" ? parsed.data.connectNowMerchantId : ""
+            );
         } catch (e) {
             setPosStatusError(e instanceof Error ? e.message : "Failed to fetch POS status");
             setPosStatus(null);
@@ -343,6 +348,7 @@ export default function AdminOrgDetailsPage() {
         setPosError(null);
 
         const restaurantId = posRestaurantId.trim();
+        const connectNowMerchantIdTrimmed = posConnectNowMerchantId.trim();
         if (!restaurantId) {
             setPosError("Restaurant ID is required");
             return;
@@ -358,7 +364,10 @@ export default function AdminOrgDetailsPage() {
                     "Content-Type": "application/json",
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
-                body: JSON.stringify({ restaurantId }),
+                body: JSON.stringify({
+                    restaurantId,
+                    ...(connectNowMerchantIdTrimmed ? { connectNowMerchantId: connectNowMerchantIdTrimmed } : {}),
+                }),
             });
 
             const data = (await res.json().catch(() => ({}))) as any;
@@ -374,6 +383,15 @@ export default function AdminOrgDetailsPage() {
                 }
                 setPosError(data?.error || data?.message || "Failed to configure POS");
                 return;
+            }
+
+            const configuredRestaurantId = (data as any)?.data?.restaurantId;
+            if (typeof configuredRestaurantId === "string") {
+                setPosRestaurantId(configuredRestaurantId);
+            }
+            const configuredConnectNowMerchantId = (data as any)?.data?.connectNowMerchantId;
+            if (typeof configuredConnectNowMerchantId === "string") {
+                setPosConnectNowMerchantId(configuredConnectNowMerchantId);
             }
 
             setPosOk("POS configuration saved");
@@ -532,6 +550,30 @@ export default function AdminOrgDetailsPage() {
                                             required
                                         />
                                     </div>
+
+                                    <div className="flex items-center justify-between rounded-md border p-3">
+                                        <div>
+                                            <p className="text-sm font-medium">Advanced settings</p>
+                                            <p className="text-xs text-muted-foreground">Optional outletId override for ConnectNow fetch filter.</p>
+                                        </div>
+                                        <Switch checked={posShowAdvanced} onCheckedChange={setPosShowAdvanced} disabled={posSaving} />
+                                    </div>
+
+                                    {posShowAdvanced ? (
+                                        <div className="space-y-2">
+                                            <Label htmlFor="connectNowMerchantId">ConnectNow Merchant ID (optional)</Label>
+                                            <Input
+                                                id="connectNowMerchantId"
+                                                value={posConnectNowMerchantId}
+                                                onChange={(e) => setPosConnectNowMerchantId(e.target.value)}
+                                                placeholder="MerchantID001"
+                                                disabled={posSaving}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Must match the outletId shown in ConnectNow bills / last rejected order.
+                                            </p>
+                                        </div>
+                                    ) : null}
                                     <p className="text-xs text-muted-foreground">
                                         After integrating, you must map each outlet's POS Outlet ID to the ConnectNow bill `outletId`.
                                     </p>
@@ -564,12 +606,7 @@ export default function AdminOrgDetailsPage() {
                                     <Button
                                         variant="outline"
                                         onClick={onSyncNow}
-                                        disabled={
-                                            posSyncLoading ||
-                                            posStatusLoading ||
-                                            posStatus?.status !== "active" ||
-                                            (posStatus?.mappedOutlets?.length ?? 0) === 0
-                                        }
+                                        disabled={posSyncLoading || posStatusLoading || posStatus?.status !== "active"}
                                     >
                                         {posSyncLoading ? "Syncing..." : "Sync Now"}
                                     </Button>
@@ -580,7 +617,7 @@ export default function AdminOrgDetailsPage() {
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <p className="text-xs text-muted-foreground">
-                                    Sync Now triggers the backend container consumer job server-side. It is enabled only when integration status is active and at least one outlet is mapped.
+                                    Sync Now triggers the backend container consumer job server-side. It is enabled only when integration status is active.
                                 </p>
 
                                 {posSyncError && (
@@ -622,34 +659,18 @@ export default function AdminOrgDetailsPage() {
 
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
                                             <div>
-                                                <div className="text-muted-foreground">Mapped outlets</div>
-                                                <div className="font-medium">{String(posStatus.mappedOutlets?.length ?? 0)}</div>
+                                                <div className="text-muted-foreground">Expected OutletId</div>
+                                                <div className="font-medium">{posStatus.expectedOutletId || "—"}</div>
                                             </div>
                                             <div>
-                                                <div className="text-muted-foreground">Unmapped outlets</div>
-                                                <div className="font-medium">{String(posStatus.unmappedOutletsCount ?? "—")}</div>
+                                                <div className="text-muted-foreground">connectNowMerchantId</div>
+                                                <div className="font-medium">{posStatus.connectNowMerchantId || "—"}</div>
                                             </div>
                                         </div>
 
                                         <p className="text-xs text-muted-foreground">
-                                            ConnectNow OutletId must match the Outlet ID you saved for each outlet.
+                                            ConnectNow side must insert orders with outlet_id equal to Expected OutletId.
                                         </p>
-
-                                        <div>
-                                            <div className="text-sm font-medium mb-2">Mapped outlets</div>
-                                            {posStatus.mappedOutlets?.length ? (
-                                                <div className="space-y-1 text-sm">
-                                                    {posStatus.mappedOutlets.map((m) => (
-                                                        <div key={m._id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                                                            <div className="font-medium">{m.name}</div>
-                                                            <div className="text-muted-foreground">{m.posOutletId}</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <p className="text-sm text-muted-foreground">No mapped outlets.</p>
-                                            )}
-                                        </div>
 
                                         <div>
                                             <div className="text-sm font-medium mb-2">Container consumer metrics</div>
