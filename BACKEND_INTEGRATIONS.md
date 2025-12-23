@@ -23,10 +23,10 @@ It is intentionally **code-accurate**:
 ### ConnectNow mode (important contract)
 
 - `restaurantid` / `Clientid` = **Restaurant ID** (configured in Admin UI)
-- `outletid` / `OutletId` = **Merchant ID**, and in our system **Merchant ID = orgId**
+- `outletid` / `OutletId` = **Outlet ID** (must be mapped per outlet in Admin UI)
 - Therefore:
   - Admin config is **restaurantId only**
-  - There is **no per-outlet mapping requirement** for ConnectNow polling mode
+  - Per-outlet mapping is **required for ingestion** (each outlet must have `posOutletId` set to the exact ConnectNow `outletId`)
 
 ### Base URL
 
@@ -142,7 +142,7 @@ It is intentionally **code-accurate**:
 
 Used to debug:
 
-- Outlet mapping status (legacy / not applicable in ConnectNow polling mode)
+- Outlet mapping status (required for ingestion)
 - Last rejected order (transaction + outlet)
 - Container consumer metrics (fetched/ingested/duplicate/rejected, timestamps)
 - Poison / invalid bills tracking
@@ -157,7 +157,7 @@ Used to debug:
 - **Secret handling:** injected server-side from env (not sent from browser)
 - **Required env var (frontend runtime):** `POS_CONTAINER_CRON_SECRET` (fallbacks supported: `CRON_SECRET`, `X_CRON_SECRET`)
 
-### 3.2.3 Admin outlet mapping (legacy)
+### 3.2.3 Admin outlet mapping (required for ingestion)
 
 **List + Create outlets**
 
@@ -175,8 +175,7 @@ Used to debug:
 
 Important rule:
 
-- In ConnectNow polling mode, outlet mapping is **not required**.
-- `mappedOutlets` may be `[]` and `unmappedOutletsCount` may be `0` and should be treated as **not applicable**.
+- POS bills are accepted only if incoming bill `outletId` matches an outlet's configured `posOutletId` within the org.
 
 ### 3.3 Admin WhatsApp configuration
 

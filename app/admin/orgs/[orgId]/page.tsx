@@ -64,8 +64,6 @@ export default function AdminOrgDetailsPage() {
     const [accessResult, setAccessResult] = useState<{ accessCode: string; expiresAt?: string; email?: string } | null>(null);
 
     const [posRestaurantId, setPosRestaurantId] = useState("");
-    const [posConnectNowMerchantId, setPosConnectNowMerchantId] = useState("");
-    const [posShowAdvanced, setPosShowAdvanced] = useState(false);
     const [posSaving, setPosSaving] = useState(false);
     const [posError, setPosError] = useState<string | null>(null);
     const [posOk, setPosOk] = useState<string | null>(null);
@@ -158,9 +156,6 @@ export default function AdminOrgDetailsPage() {
             const parsed = data as AdminOrgPosStatusResponse;
             setPosStatus(parsed?.data || null);
             setPosRestaurantId(typeof parsed?.data?.restaurantId === "string" ? parsed.data.restaurantId : "");
-            setPosConnectNowMerchantId(
-                typeof parsed?.data?.connectNowMerchantId === "string" ? parsed.data.connectNowMerchantId : ""
-            );
         } catch (e) {
             setPosStatusError(e instanceof Error ? e.message : "Failed to fetch POS status");
             setPosStatus(null);
@@ -348,7 +343,6 @@ export default function AdminOrgDetailsPage() {
         setPosError(null);
 
         const restaurantId = posRestaurantId.trim();
-        const connectNowMerchantIdTrimmed = posConnectNowMerchantId.trim();
         if (!restaurantId) {
             setPosError("Restaurant ID is required");
             return;
@@ -364,10 +358,7 @@ export default function AdminOrgDetailsPage() {
                     "Content-Type": "application/json",
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
-                body: JSON.stringify({
-                    restaurantId,
-                    connectNowMerchantId: connectNowMerchantIdTrimmed ? connectNowMerchantIdTrimmed : null,
-                }),
+                body: JSON.stringify({ restaurantId }),
             });
 
             const data = (await res.json().catch(() => ({}))) as any;
@@ -541,33 +532,8 @@ export default function AdminOrgDetailsPage() {
                                             required
                                         />
                                     </div>
-
-                                    <div className="flex items-center justify-between rounded-md border p-3">
-                                        <div>
-                                            <p className="text-sm font-medium">Advanced settings</p>
-                                            <p className="text-xs text-muted-foreground">Optional ConnectNow outletId override.</p>
-                                        </div>
-                                        <Switch checked={posShowAdvanced} onCheckedChange={setPosShowAdvanced} disabled={posSaving} />
-                                    </div>
-
-                                    {posShowAdvanced ? (
-                                        <div className="space-y-2">
-                                            <Label htmlFor="connectNowMerchantId">ConnectNow Merchant ID (Expected OutletId)</Label>
-                                            <Input
-                                                id="connectNowMerchantId"
-                                                value={posConnectNowMerchantId}
-                                                onChange={(e) => setPosConnectNowMerchantId(e.target.value)}
-                                                placeholder="MerchantID001"
-                                                disabled={posSaving}
-                                            />
-                                            <p className="text-xs text-muted-foreground">
-                                                Must match the outletId shown in ConnectNow bills / last rejected order.
-                                            </p>
-                                        </div>
-                                    ) : null}
-
                                     <p className="text-xs text-muted-foreground">
-                                        Merchant ID (orgId): {orgId}
+                                        After integrating, you must map each outlet's POS Outlet ID to the ConnectNow bill `outletId`.
                                     </p>
 
                                     {posError && (
@@ -598,7 +564,12 @@ export default function AdminOrgDetailsPage() {
                                     <Button
                                         variant="outline"
                                         onClick={onSyncNow}
-                                        disabled={posSyncLoading || posStatusLoading || posStatus?.status !== "active"}
+                                        disabled={
+                                            posSyncLoading ||
+                                            posStatusLoading ||
+                                            posStatus?.status !== "active" ||
+                                            (posStatus?.mappedOutlets?.length ?? 0) === 0
+                                        }
                                     >
                                         {posSyncLoading ? "Syncing..." : "Sync Now"}
                                     </Button>
@@ -609,7 +580,7 @@ export default function AdminOrgDetailsPage() {
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <p className="text-xs text-muted-foreground">
-                                    Sync Now triggers the backend container consumer job server-side. It is enabled only when integration status is active.
+                                    Sync Now triggers the backend container consumer job server-side. It is enabled only when integration status is active and at least one outlet is mapped.
                                 </p>
 
                                 {posSyncError && (
@@ -651,18 +622,34 @@ export default function AdminOrgDetailsPage() {
 
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
                                             <div>
-                                                <div className="text-muted-foreground">Expected OutletId</div>
-                                                <div className="font-medium">{posStatus.expectedOutletId || orgId}</div>
+                                                <div className="text-muted-foreground">Mapped outlets</div>
+                                                <div className="font-medium">{String(posStatus.mappedOutlets?.length ?? 0)}</div>
                                             </div>
                                             <div>
-                                                <div className="text-muted-foreground">Configured ConnectNow Merchant ID</div>
-                                                <div className="font-medium">{posStatus.connectNowMerchantId || "—"}</div>
+                                                <div className="text-muted-foreground">Unmapped outlets</div>
+                                                <div className="font-medium">{String(posStatus.unmappedOutletsCount ?? "—")}</div>
                                             </div>
                                         </div>
 
                                         <p className="text-xs text-muted-foreground">
-                                            ConnectNow bill outletId must equal Expected OutletId.
+                                            ConnectNow OutletId must match the Outlet ID you saved for each outlet.
                                         </p>
+
+                                        <div>
+                                            <div className="text-sm font-medium mb-2">Mapped outlets</div>
+                                            {posStatus.mappedOutlets?.length ? (
+                                                <div className="space-y-1 text-sm">
+                                                    {posStatus.mappedOutlets.map((m) => (
+                                                        <div key={m._id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                                                            <div className="font-medium">{m.name}</div>
+                                                            <div className="text-muted-foreground">{m.posOutletId}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-muted-foreground">No mapped outlets.</p>
+                                            )}
+                                        </div>
 
                                         <div>
                                             <div className="text-sm font-medium mb-2">Container consumer metrics</div>

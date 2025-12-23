@@ -367,12 +367,14 @@ export default function AdminOrgOutletsPage() {
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle>Outlet POS Mapping (Legacy)</CardTitle>
-                        <Badge variant="outline">Optional</Badge>
+                        <CardTitle>Outlet POS Mapping</CardTitle>
+                        <Badge variant="outline">
+                            {linkedCount} of {outlets.length} outlets linked to POS
+                        </Badge>
                     </CardHeader>
                     <CardContent>
                         <p className="text-sm text-muted-foreground mb-6">
-                            ConnectNow polling mode does not require per-outlet mapping. Configure Restaurant ID and verify Merchant ID (orgId) via POS Diagnostics.
+                            Save the ConnectNow OutletId for each outlet. This must exactly match the `outletId` field in ConnectNow bills.
                         </p>
 
                         <form onSubmit={createOutlet} className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-6">
@@ -526,17 +528,33 @@ export default function AdminOrgOutletsPage() {
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                     <div>
-                                        <div className="text-muted-foreground">Expected OutletId</div>
-                                        <div className="font-medium">{posStatus.expectedOutletId || orgId}</div>
+                                        <div className="text-muted-foreground">Mapped outlets</div>
+                                        <div className="font-medium">{String(posStatus.mappedOutlets?.length ?? 0)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted-foreground">Configured ConnectNow Merchant ID</div>
-                                        <div className="font-medium">{posStatus.connectNowMerchantId || "—"}</div>
+                                        <div className="text-muted-foreground">Unmapped outlets</div>
+                                        <div className="font-medium">{String(posStatus.unmappedOutletsCount ?? "—")}</div>
                                     </div>
                                 </div>
 
+                                <div>
+                                    <div className="text-sm font-medium mb-2">Mapped outlets</div>
+                                    {posStatus.mappedOutlets?.length ? (
+                                        <div className="space-y-1 text-sm">
+                                            {posStatus.mappedOutlets.map((m) => (
+                                                <div key={m._id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                                                    <div className="font-medium">{m.name}</div>
+                                                    <div className="text-muted-foreground">{m.posOutletId}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">No mapped outlets.</p>
+                                    )}
+                                </div>
+
                                 <p className="text-xs text-muted-foreground">
-                                    ConnectNow bill outletId must equal Expected OutletId.
+                                    ConnectNow OutletId must match the Outlet ID you saved for each outlet.
                                 </p>
 
                                 <div>
@@ -602,12 +620,10 @@ export default function AdminOrgOutletsPage() {
                                     ) : null}
                                 </div>
 
-                                {posStatus.mappedOutlets?.length || (posStatus.unmappedOutletsCount ?? 0) > 0 ? (
-                                    <div>
-                                        <div className="text-sm font-medium mb-2">Outlet mapping (legacy)</div>
-                                        <p className="text-sm text-muted-foreground">
-                                            ConnectNow mode does not require outlet mapping. If present, this is legacy and not used for ConnectNow polling.
-                                        </p>
+                                {posStatus.error ? (
+                                    <div className="rounded-md border p-3 text-sm">
+                                        <div className="text-muted-foreground">Last error</div>
+                                        <div className="font-medium">{posStatus.error}</div>
                                     </div>
                                 ) : null}
 
