@@ -37,6 +37,11 @@ const navItems: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
+    title: "Segments",
+    href: "/segments",
+    icon: Users,
+  },
+  {
     title: "Campaigns",
     href: "/campaigns",
     icon: Megaphone,
