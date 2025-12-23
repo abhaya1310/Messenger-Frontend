@@ -48,6 +48,9 @@ export interface AdminOrgPosStatusResponse {
         merchantId?: string;
         restaurantId?: string;
 
+        connectNowMerchantId?: string | null;
+        expectedOutletId?: string;
+
         lastIngestedAt?: string | null;
 
         container?: {

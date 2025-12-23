@@ -64,6 +64,8 @@ export default function AdminOrgDetailsPage() {
     const [accessResult, setAccessResult] = useState<{ accessCode: string; expiresAt?: string; email?: string } | null>(null);
 
     const [posRestaurantId, setPosRestaurantId] = useState("");
+    const [posConnectNowMerchantId, setPosConnectNowMerchantId] = useState("");
+    const [posShowAdvanced, setPosShowAdvanced] = useState(false);
     const [posSaving, setPosSaving] = useState(false);
     const [posError, setPosError] = useState<string | null>(null);
     const [posOk, setPosOk] = useState<string | null>(null);
@@ -156,6 +158,9 @@ export default function AdminOrgDetailsPage() {
             const parsed = data as AdminOrgPosStatusResponse;
             setPosStatus(parsed?.data || null);
             setPosRestaurantId(typeof parsed?.data?.restaurantId === "string" ? parsed.data.restaurantId : "");
+            setPosConnectNowMerchantId(
+                typeof parsed?.data?.connectNowMerchantId === "string" ? parsed.data.connectNowMerchantId : ""
+            );
         } catch (e) {
             setPosStatusError(e instanceof Error ? e.message : "Failed to fetch POS status");
             setPosStatus(null);
@@ -343,6 +348,7 @@ export default function AdminOrgDetailsPage() {
         setPosError(null);
 
         const restaurantId = posRestaurantId.trim();
+        const connectNowMerchantIdTrimmed = posConnectNowMerchantId.trim();
         if (!restaurantId) {
             setPosError("Restaurant ID is required");
             return;
@@ -358,7 +364,10 @@ export default function AdminOrgDetailsPage() {
                     "Content-Type": "application/json",
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
-                body: JSON.stringify({ restaurantId }),
+                body: JSON.stringify({
+                    restaurantId,
+                    connectNowMerchantId: connectNowMerchantIdTrimmed ? connectNowMerchantIdTrimmed : null,
+                }),
             });
 
             const data = (await res.json().catch(() => ({}))) as any;
@@ -533,8 +542,32 @@ export default function AdminOrgDetailsPage() {
                                         />
                                     </div>
 
+                                    <div className="flex items-center justify-between rounded-md border p-3">
+                                        <div>
+                                            <p className="text-sm font-medium">Advanced settings</p>
+                                            <p className="text-xs text-muted-foreground">Optional ConnectNow outletId override.</p>
+                                        </div>
+                                        <Switch checked={posShowAdvanced} onCheckedChange={setPosShowAdvanced} disabled={posSaving} />
+                                    </div>
+
+                                    {posShowAdvanced ? (
+                                        <div className="space-y-2">
+                                            <Label htmlFor="connectNowMerchantId">ConnectNow Merchant ID (Expected OutletId)</Label>
+                                            <Input
+                                                id="connectNowMerchantId"
+                                                value={posConnectNowMerchantId}
+                                                onChange={(e) => setPosConnectNowMerchantId(e.target.value)}
+                                                placeholder="MerchantID001"
+                                                disabled={posSaving}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Must match the outletId shown in ConnectNow bills / last rejected order.
+                                            </p>
+                                        </div>
+                                    ) : null}
+
                                     <p className="text-xs text-muted-foreground">
-                                        Merchant ID = orgId ({orgId}). ConnectNow OutletId/outletid must equal Merchant ID.
+                                        Merchant ID (orgId): {orgId}
                                     </p>
 
                                     {posError && (
@@ -616,8 +649,19 @@ export default function AdminOrgDetailsPage() {
                                             </div>
                                         </div>
 
+                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
+                                            <div>
+                                                <div className="text-muted-foreground">Expected OutletId</div>
+                                                <div className="font-medium">{posStatus.expectedOutletId || orgId}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-muted-foreground">Configured ConnectNow Merchant ID</div>
+                                                <div className="font-medium">{posStatus.connectNowMerchantId || "—"}</div>
+                                            </div>
+                                        </div>
+
                                         <p className="text-xs text-muted-foreground">
-                                            ConnectNow OutletId/outletid must equal Merchant ID (orgId).
+                                            ConnectNow bill outletId must equal Expected OutletId.
                                         </p>
 
                                         <div>

@@ -524,8 +524,19 @@ export default function AdminOrgOutletsPage() {
                                     </div>
                                 </div>
 
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                    <div>
+                                        <div className="text-muted-foreground">Expected OutletId</div>
+                                        <div className="font-medium">{posStatus.expectedOutletId || orgId}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Configured ConnectNow Merchant ID</div>
+                                        <div className="font-medium">{posStatus.connectNowMerchantId || "—"}</div>
+                                    </div>
+                                </div>
+
                                 <p className="text-xs text-muted-foreground">
-                                    ConnectNow OutletId/outletid must equal Merchant ID (orgId).
+                                    ConnectNow bill outletId must equal Expected OutletId.
                                 </p>
 
                                 <div>
