@@ -452,7 +452,10 @@ export default function AdminOrgDetailsPage() {
                 return;
             }
 
-            const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/update-phone-number-id`, {
+            const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+            const url = `${backendBaseUrl}/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/update-phone-number-id`;
+
+            const res = await fetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

@@ -13,11 +13,13 @@ import {
     ChevronRight,
     UserPlus,
     Activity,
+    ThumbsUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/sidebar-provider";
 import { clearAuth } from "@/lib/auth";
 import { clearSelectedOrgId } from "@/lib/selected-org";
+import { getSelectedOrgId } from "@/lib/selected-org";
 
 interface NavItem {
     title: string;
@@ -40,6 +42,11 @@ const navItems: NavItem[] = [
         title: "Campaigns",
         href: "/admin/campaigns",
         icon: Megaphone,
+    },
+    {
+        title: "Feedback",
+        href: "/admin/orgs",
+        icon: ThumbsUp,
     },
     {
         title: "Run Diagnostics",
@@ -99,6 +106,15 @@ export function AdminSidebar() {
         return normalizedPath === href;
     };
 
+    const resolveHref = (href: string) => {
+        if (href !== "/admin/orgs") return href;
+        const selectedOrgId = getSelectedOrgId();
+        if (selectedOrgId) {
+            return `/admin/orgs/${encodeURIComponent(selectedOrgId)}/feedback`;
+        }
+        return "/admin/orgs";
+    };
+
     if (isMobile) {
         return (
             <>
@@ -147,7 +163,7 @@ export function AdminSidebar() {
                                     return (
                                         <li key={item.title}>
                                             <Link
-                                                href={item.href}
+                                                href={resolveHref(item.href)}
                                                 onClick={closeMobile}
                                                 className={cn(
                                                     "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
@@ -222,7 +238,7 @@ export function AdminSidebar() {
                             return (
                                 <li key={item.title}>
                                     <Link
-                                        href={item.href}
+                                        href={resolveHref(item.href)}
                                         className={cn(
                                             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                                             isActive

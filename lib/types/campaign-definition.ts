@@ -1,3 +1,5 @@
+import type { TemplateVariableMappings } from "./template-variable-mapping";
+
 export type CampaignDefinitionStatus = 'draft' | 'published' | 'archived';
 
 export type WhatsAppTemplateCategory = 'AUTHENTICATION' | 'MARKETING' | 'UTILITY';
@@ -25,6 +27,7 @@ export interface CampaignDefinition {
     description?: string;
     status: CampaignDefinitionStatus;
     template: CampaignDefinitionTemplate;
+    templateVariableMappings?: TemplateVariableMappings;
     publishedAt?: string;
     createdAt: string;
     updatedAt: string;
@@ -50,6 +53,7 @@ export interface CreateCampaignDefinitionRequest {
         category: WhatsAppTemplateCategory;
         componentsPreset: unknown[];
     };
+    templateVariableMappings?: TemplateVariableMappings;
 }
 
 export interface UpdateCampaignDefinitionRequest {
@@ -62,4 +66,5 @@ export interface UpdateCampaignDefinitionRequest {
         category?: WhatsAppTemplateCategory;
         componentsPreset?: unknown[];
     };
+    templateVariableMappings?: TemplateVariableMappings;
 }

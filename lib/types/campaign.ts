@@ -1,5 +1,7 @@
 // Campaign and Campaign Configuration Types
 
+import type { TemplateVariableMappings } from "./template-variable-mapping";
+
 // ============================================================================
 // One-Time Campaign Types (Event/Promotional/Announcement)
 // ============================================================================
@@ -157,12 +159,14 @@ export interface UtilityConfig {
     enabled: boolean;
     delayMinutes: number;   // 15-1440 minutes
     templateId: string;
+    templateVariableMappings?: TemplateVariableMappings;
   };
   reviewRequest: {
     enabled: boolean;
     daysAfterVisit: number;
     reviewLink: string;     // Google/Zomato URL
     templateId: string;
+    templateVariableMappings?: TemplateVariableMappings;
   };
 }
 

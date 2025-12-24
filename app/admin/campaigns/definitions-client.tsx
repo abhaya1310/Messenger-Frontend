@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Megaphone, Plus, RefreshCw, Search, Trash2, UploadCloud } from "lucide-react";
 import { getAuthToken } from "@/lib/auth";
 import type { Template } from "@/lib/api";
+import { TemplateVariableMapper, validateTemplateVariableMappings } from "@/components/template-variable-mapper";
 import type {
     CampaignDefinition,
     CampaignDefinitionStatus,
@@ -20,6 +21,8 @@ import type {
     UpdateCampaignDefinitionRequest,
     WhatsAppTemplateCategory,
 } from "@/lib/types/campaign-definition";
+import type { TemplateVariableMappings } from "@/lib/types/template-variable-mapping";
+import { CUSTOMER_FIELD_OPTIONS, TRANSACTION_FIELD_OPTIONS } from "@/lib/types/template-variable-mapping";
 
 type TemplateVariable = {
     index: number;
@@ -35,6 +38,7 @@ type UpsertFormState = {
     templateCategory: WhatsAppTemplateCategory;
     variables: TemplateVariable[];
     sampleValues: Record<string, string>;
+    templateVariableMappings: TemplateVariableMappings;
 };
 
 function defaultFormState(): UpsertFormState {
@@ -47,6 +51,7 @@ function defaultFormState(): UpsertFormState {
         templateCategory: "MARKETING",
         variables: [],
         sampleValues: {},
+        templateVariableMappings: {},
     };
 }
 
@@ -91,6 +96,8 @@ export default function AdminCampaignDefinitionsClient() {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [form, setForm] = useState<UpsertFormState>(defaultFormState());
     const [saving, setSaving] = useState(false);
+
+    const [mappingInvalidIndices, setMappingInvalidIndices] = useState<number[]>([]);
 
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
@@ -219,6 +226,7 @@ export default function AdminCampaignDefinitionsClient() {
         setActiveId(null);
         setForm(defaultFormState());
         setAnalyzeError(null);
+        setMappingInvalidIndices([]);
         setShowUpsert(true);
     };
 
@@ -226,6 +234,7 @@ export default function AdminCampaignDefinitionsClient() {
         setUpsertMode("edit");
         setActiveId(d._id);
         setAnalyzeError(null);
+        setMappingInvalidIndices([]);
 
         const baseForm: UpsertFormState = {
             key: d.key,
@@ -236,6 +245,7 @@ export default function AdminCampaignDefinitionsClient() {
             templateCategory: d.template?.category || "MARKETING",
             variables: [],
             sampleValues: d.template?.preview?.sampleValues || {},
+            templateVariableMappings: d.templateVariableMappings || {},
         };
 
         setForm(baseForm);
@@ -280,6 +290,7 @@ export default function AdminCampaignDefinitionsClient() {
                     acc[key] = p.sampleValues?.[key] || "";
                     return acc;
                 }, {}),
+                templateVariableMappings: p.templateVariableMappings || {},
             }));
         } catch {
             console.error("/api/templates/analyze error");
@@ -289,10 +300,23 @@ export default function AdminCampaignDefinitionsClient() {
 
     const submitUpsert = async () => {
         setError(null);
+        setMappingInvalidIndices([]);
 
         if (!form.key.trim() || !form.name.trim() || !form.templateName.trim() || !form.templateLanguage.trim()) {
             setError("Please fill in all required fields");
             return;
+        }
+
+        if (form.variables.length > 0) {
+            const validation = validateTemplateVariableMappings({
+                templateVariables: form.variables.map((v) => ({ index: v.index })),
+                mappings: form.templateVariableMappings || {},
+            });
+            if (!validation.ok) {
+                setMappingInvalidIndices(validation.invalidIndices);
+                setError("Please complete variable mappings before saving");
+                return;
+            }
         }
 
         setSaving(true);
@@ -331,12 +355,14 @@ export default function AdminCampaignDefinitionsClient() {
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
                         template: templatePayload,
+                        templateVariableMappings: form.templateVariableMappings,
                     } satisfies CreateCampaignDefinitionRequest)
                     : ({
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
                         template: templatePayload,
+                        templateVariableMappings: form.templateVariableMappings,
                     } satisfies UpdateCampaignDefinitionRequest);
 
             const token = getAuthToken();
@@ -623,6 +649,20 @@ export default function AdminCampaignDefinitionsClient() {
                                 onValueChange={async (v) => {
                                     const selected = templateOptions.find((t) => t.name === v);
 
+                                    const shouldReset =
+                                        Object.keys(form.templateVariableMappings || {}).length > 0 &&
+                                        form.templateName.trim() &&
+                                        form.templateName.trim() !== v;
+
+                                    if (shouldReset) {
+                                        const ok = window.confirm(
+                                            "Template changed; mappings may not match. Reset mappings?"
+                                        );
+                                        if (!ok) {
+                                            return;
+                                        }
+                                    }
+
                                     setForm((p) => ({
                                         ...p,
                                         templateName: v,
@@ -630,9 +670,11 @@ export default function AdminCampaignDefinitionsClient() {
                                         templateCategory: (selected?.category as WhatsAppTemplateCategory) || p.templateCategory,
                                         variables: [],
                                         sampleValues: {},
+                                        templateVariableMappings: shouldReset ? {} : p.templateVariableMappings,
                                     }));
 
                                     setAnalyzeError(null);
+                                    setMappingInvalidIndices([]);
 
                                     try {
                                         const token = getAuthToken();
@@ -671,6 +713,7 @@ export default function AdminCampaignDefinitionsClient() {
                                                 acc[key] = p.sampleValues?.[key] || "";
                                                 return acc;
                                             }, {}),
+                                            templateVariableMappings: shouldReset ? {} : p.templateVariableMappings,
                                         }));
                                     } catch {
                                         console.error("/api/templates/analyze error");
@@ -758,6 +801,24 @@ export default function AdminCampaignDefinitionsClient() {
                                     );
                                 })}
                             </div>
+                        </div>
+                    )}
+
+                    {form.variables.length > 0 && (
+                        <div className="mt-6 border-t pt-4">
+                            <TemplateVariableMapper
+                                templateVariables={form.variables.map((v) => ({
+                                    index: v.index,
+                                    label: v.label,
+                                    context: "",
+                                    required: true,
+                                }))}
+                                value={form.templateVariableMappings || {}}
+                                onChange={(next) => setForm((p) => ({ ...p, templateVariableMappings: next }))}
+                                customerOptions={CUSTOMER_FIELD_OPTIONS}
+                                transactionOptions={TRANSACTION_FIELD_OPTIONS}
+                                invalidIndices={mappingInvalidIndices}
+                            />
                         </div>
                     )}
 
