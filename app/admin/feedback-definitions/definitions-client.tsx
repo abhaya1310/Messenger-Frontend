@@ -83,6 +83,7 @@ export default function AdminFeedbackDefinitionsClient() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [backendMissing, setBackendMissing] = useState(false);
 
     const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
@@ -202,11 +203,18 @@ export default function AdminFeedbackDefinitionsClient() {
             });
 
             const data = await res.json().catch(() => null);
+            if (res.status === 404) {
+                setBackendMissing(true);
+                throw new Error(
+                    "Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions."
+                );
+            }
             if (!res.ok) {
                 const message = (data as any)?.error || (data as any)?.message || "Failed to load feedback definitions";
                 throw new Error(message);
             }
 
+            setBackendMissing(false);
             setDefinitions(((data as any)?.data || []) as FeedbackDefinition[]);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load feedback definitions");
@@ -343,6 +351,13 @@ export default function AdminFeedbackDefinitionsClient() {
         setError(null);
         setMappingInvalidIndices([]);
 
+        if (backendMissing) {
+            setError(
+                "Cannot save: Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions."
+            );
+            return;
+        }
+
         if (!form.key.trim() || !form.name.trim() || !form.templateName.trim() || !form.templateLanguage.trim()) {
             setError("Please fill in all required fields");
             return;
@@ -409,6 +424,11 @@ export default function AdminFeedbackDefinitionsClient() {
             );
 
             const data = await res.json().catch(() => null);
+            if (res.status === 404) {
+                throw new Error(
+                    "Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions to enable saving."
+                );
+            }
             if (!res.ok) {
                 const message = (data as any)?.error || (data as any)?.message || "Failed to save definition";
                 throw new Error(message);
@@ -426,6 +446,13 @@ export default function AdminFeedbackDefinitionsClient() {
     };
 
     const onDelete = async (d: FeedbackDefinition) => {
+        if (backendMissing) {
+            setError(
+                "Cannot delete: Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions."
+            );
+            return;
+        }
+
         const ok = window.confirm(`Delete feedback definition "${d.name}"?`);
         if (!ok) return;
 
@@ -442,6 +469,11 @@ export default function AdminFeedbackDefinitionsClient() {
             });
 
             const data = await res.json().catch(() => null);
+            if (res.status === 404) {
+                throw new Error(
+                    "Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions to enable deletion."
+                );
+            }
             if (!res.ok) {
                 const message = (data as any)?.error || (data as any)?.message || "Failed to delete";
                 throw new Error(message);
@@ -469,7 +501,7 @@ export default function AdminFeedbackDefinitionsClient() {
                                 {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                 Refresh
                             </Button>
-                            <Button onClick={openCreate} className="gap-2">
+                            <Button onClick={openCreate} className="gap-2" disabled={backendMissing}>
                                 <Plus className="h-4 w-4" />
                                 New Definition
                             </Button>
@@ -480,6 +512,16 @@ export default function AdminFeedbackDefinitionsClient() {
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <Breadcrumb items={[{ label: "Admin", href: "/admin" }, { label: "Feedback" }]} />
+
+                {backendMissing && (
+                    <Card className="mb-6 border-destructive/30">
+                        <CardContent className="pt-6">
+                            <p className="text-sm text-destructive" role="alert">
+                                Feedback Definitions backend endpoints are not deployed. Backend must implement <span className="font-mono">/api/admin/feedback-definitions</span>.
+                            </p>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {error && (
                     <Card className="mb-6 border-destructive/30">
@@ -801,11 +843,19 @@ export default function AdminFeedbackDefinitionsClient() {
                         </div>
                     )}
 
+                    {error && (
+                        <div className="mt-4">
+                            <p className="text-sm text-destructive" role="alert">
+                                {error}
+                            </p>
+                        </div>
+                    )}
+
                     <DialogFooter className="mt-6">
                         <Button variant="outline" onClick={() => setShowUpsert(false)} disabled={saving}>
                             Cancel
                         </Button>
-                        <Button onClick={submitUpsert} disabled={saving} className="gap-2">
+                        <Button onClick={submitUpsert} disabled={saving || backendMissing} className="gap-2">
                             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                             Save
                         </Button>

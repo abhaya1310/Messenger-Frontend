@@ -215,6 +215,28 @@ All routes below follow the same pattern:
 **File:** `app/api/admin/campaign-definitions/[id]/archive/route.ts`
 - `POST /api/admin/campaign-definitions/:id/archive` → `POST /api/admin/campaign-definitions/:id/archive`
 
+### 3.4.1 Admin Feedback Templates: Feedback Definitions (global)
+
+> Important: Feedback Definitions are treated as **global** (not org-scoped) and do **not** forward `X-ORG-ID`.
+
+**File:** `app/api/admin/feedback-definitions/route.ts`
+- `GET /api/admin/feedback-definitions` → `GET /api/admin/feedback-definitions`
+- `POST /api/admin/feedback-definitions` → `POST /api/admin/feedback-definitions`
+- **Headers:** `Content-Type: application/json`, admin auth
+
+**File:** `app/api/admin/feedback-definitions/[id]/route.ts`
+- `GET /api/admin/feedback-definitions/:id` → `GET /api/admin/feedback-definitions/:id`
+- `PATCH /api/admin/feedback-definitions/:id` → `PATCH /api/admin/feedback-definitions/:id`
+- `DELETE /api/admin/feedback-definitions/:id` → `DELETE /api/admin/feedback-definitions/:id`
+
+**File:** `app/api/feedback-definitions/route.ts`
+- `GET /api/feedback-definitions` → `GET /api/feedback-definitions`
+- **Headers:** `Content-Type: application/json`
+
+Backend requirement:
+
+- The backend must implement `/api/admin/feedback-definitions`. If it is not implemented/deployed, the admin UI will show a “backend endpoints not deployed” banner and disable create/save/delete actions.
+
 ### 3.5 User Campaign Runs (JWT required)
 
 > These routes proxy **user-authenticated** campaign runs endpoints.

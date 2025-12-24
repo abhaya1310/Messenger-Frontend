@@ -76,6 +76,7 @@ Key pages:
 Admin pages:
 
 - `/admin/orgs/[orgId]/outlets` (Outlets + POS mapping + POS diagnostics)
+- `/admin/feedback-definitions` (Feedback templates / definitions)
 
 ## Layout & Auth Gating
 
@@ -226,6 +227,19 @@ Admin proxy routes:
 - `app/api/admin/org/[orgId]/whatsapp/configure-dedicated/route.ts`
 - `app/api/admin/org/[orgId]/whatsapp/status/route.ts`
 - `app/api/admin/whatsapp/orgs/route.ts`
+
+Admin feedback definitions (global):
+
+- `app/api/admin/feedback-definitions/route.ts`
+- `app/api/admin/feedback-definitions/[id]/route.ts`
+
+User feedback definitions:
+
+- `app/api/feedback-definitions/route.ts` (published definitions for end-user selection)
+
+Important:
+
+- Admin feedback definitions require backend support for `/api/admin/feedback-definitions`. If the backend does not implement these endpoints, the admin UI will show a “backend endpoints not deployed” banner and disable create/save/delete actions.
 
 The repo includes `app/api/README.md` marking these as deprecated; treat that file as outdated.
 

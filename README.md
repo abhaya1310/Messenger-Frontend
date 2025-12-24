@@ -55,6 +55,10 @@ This is a **Next.js 15** application built with:
     - Admins manage reusable campaign definitions at `/admin/campaigns`.
     - Users pick from the catalog and create runs at `/campaigns`.
     - Definitions store a template preview payload (`template.preview`) with sample values; the backend computes `template.preview.message`, which is shown on the user-facing catalog cards.
+- **Feedback Templates (Definitions)**
+  - Admins manage reusable feedback definitions at `/admin/feedback-definitions`.
+  - Users select a published feedback definition for utility messaging configuration (e.g. via `/feedback` and `/auto-campaigns`).
+  - This feature requires backend endpoints documented under **API Connections** (see below).
 - **Auto Campaign Settings**
   - Configure birthday/anniversary/first-visit/winback/festivals + utility messaging (`/auto-campaigns`).
 - **Analytics**
@@ -75,6 +79,7 @@ This is a **Next.js 15** application built with:
 - **`/admin/orgs/[orgId]/credits`**: Org credits balances + refill + ledger (admin-only).
 - **`/admin/templates`**: Admin templates browser (UI mirrors `/templates`).
 - **`/admin/campaigns`**: Admin campaign catalog (Campaign Definitions).
+- **`/admin/feedback-definitions`**: Admin feedback templates (Feedback Definitions).
 - **`/onboarding`**: Access-code based account setup.
 - **`/privacy-policy`**: Public policy page.
 - **`/dashboard`**: Primary authenticated landing.
@@ -179,6 +184,24 @@ The campaign catalog is built from **campaign definitions** created in the admin
 - User catalog + run creation:
   - `GET /api/campaign-runs/definitions` returns user-visible definitions.
   - `POST /api/campaign-runs` creates a run (optionally including `templateParams` overrides).
+
+### Feedback Templates (Definitions)
+
+The feedback feature is implemented as reusable **feedback definitions** created in the admin portal and selected by end users.
+
+- Admin definitions (proxy routes):
+  - `GET /api/admin/feedback-definitions`
+  - `POST /api/admin/feedback-definitions`
+  - `GET /api/admin/feedback-definitions/:id`
+  - `PATCH /api/admin/feedback-definitions/:id`
+  - `DELETE /api/admin/feedback-definitions/:id`
+
+- User definition picker (proxy route):
+  - `GET /api/feedback-definitions` (returns published feedback definitions for user selection)
+
+Important:
+
+- If the backend does **not** implement `/api/admin/feedback-definitions`, the admin UI will show a clear “backend endpoints not deployed” banner and saving will be disabled.
 
 Credits-related proxy routes:
 
