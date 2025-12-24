@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+
 import {
   Card,
   CardContent,
@@ -9,6 +11,9 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   MessageCircle,
   ThumbsDown,
@@ -16,7 +21,12 @@ import {
   Info,
   Star,
   AlertCircle,
+  Loader2,
+  RefreshCcw,
 } from "lucide-react";
+import { getAuthToken } from "@/lib/auth";
+import { fetchCampaignConfig, updateUtilityConfig } from "@/lib/api";
+import type { CampaignConfig, UtilityConfig } from "@/lib/types/campaign";
 
 const kpis = [
   { label: "Total Feedback", value: "1" },
@@ -45,7 +55,99 @@ const suggestionTiles = [
   },
 ];
 
+type FeedbackDefinitionListItem = {
+  _id: string;
+  name: string;
+  status?: string;
+};
+
 export default function FeedbackPage() {
+  const [config, setConfig] = useState<CampaignConfig | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [feedbackDefinitions, setFeedbackDefinitions] = useState<FeedbackDefinitionListItem[]>([]);
+  const [feedbackDefinitionsLoading, setFeedbackDefinitionsLoading] = useState(false);
+  const [feedbackDefinitionsError, setFeedbackDefinitionsError] = useState<string | null>(null);
+
+  const publishedFeedbackDefinitions = useMemo(() => {
+    return feedbackDefinitions
+      .filter((d) => String(d.status || "").toLowerCase() === "published" || !d.status)
+      .slice()
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [feedbackDefinitions]);
+
+  const loadConfig = async () => {
+    setError(null);
+    setLoadingConfig(true);
+    try {
+      const next = await fetchCampaignConfig();
+      setConfig(next);
+    } catch (e) {
+      setConfig(null);
+      setError(e instanceof Error ? e.message : "Failed to load feedback configuration");
+    } finally {
+      setLoadingConfig(false);
+    }
+  };
+
+  const loadFeedbackDefinitions = async () => {
+    setFeedbackDefinitionsError(null);
+    setFeedbackDefinitionsLoading(true);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        setFeedbackDefinitions([]);
+        return;
+      }
+
+      const res = await fetch("/api/feedback-definitions?status=published", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as any)?.error || (data as any)?.message || "Failed to load feedback definitions");
+      }
+
+      const items = ((data as any)?.data || []) as FeedbackDefinitionListItem[];
+      setFeedbackDefinitions(Array.isArray(items) ? items : []);
+    } catch (e) {
+      setFeedbackDefinitions([]);
+      setFeedbackDefinitionsError(e instanceof Error ? e.message : "Failed to load feedback definitions");
+    } finally {
+      setFeedbackDefinitionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+    loadFeedbackDefinitions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleUtilityUpdate = async (updates: Partial<UtilityConfig>) => {
+    if (!config) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateUtilityConfig(updates);
+      setConfig({ ...config, utility: updated });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const feedbackEnabled = !!config?.utility?.feedback?.enabled;
+  const feedbackDelayMinutes = config?.utility?.feedback?.delayMinutes ?? 60;
+  const feedbackDefinitionId = config?.utility?.feedback?.definitionId ?? "";
+
   return (
     <div className="space-y-8 p-6">
       <section className="rounded-3xl bg-gradient-to-r from-[#c9e7ff] via-[#a7c1ff] to-[#8ac7ff] p-8 text-white shadow-sm">
@@ -96,26 +198,122 @@ export default function FeedbackPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>How was your experience?</CardTitle>
-            <CardDescription>Created on 27 Oct 2025</CardDescription>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Feedback Settings</CardTitle>
+                <CardDescription>Configure when and what to send after visits.</CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  loadConfig();
+                  loadFeedbackDefinitions();
+                }}
+                disabled={loadingConfig || saving}
+                className="gap-2"
+              >
+                {loadingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                Refresh
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {error ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+                {error}
+              </div>
+            ) : null}
+
             <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4">
               <div>
                 <p className="text-sm text-gray-500">Channel</p>
-                <p className="font-medium">Whatsapp Utility</p>
+                <p className="font-medium">WhatsApp Utility</p>
               </div>
-              <Button size="sm" variant="ghost">
-                Edit
-              </Button>
+              <Switch
+                checked={feedbackEnabled}
+                onCheckedChange={(checked) =>
+                  handleUtilityUpdate({
+                    feedback: { ...config!.utility.feedback, enabled: checked },
+                  })
+                }
+                disabled={loadingConfig || saving || !config}
+              />
             </div>
-            <div className="flex items-center justify-between rounded-xl bg-gray-50 p-4">
-              <span>Inactive</span>
-              <div className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300">
-                <span className="inline-block h-5 w-5 rounded-full bg-white translate-x-1" />
+
+            {loadingConfig ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
               </div>
-            </div>
-            <Button className="w-full">Edit Feedback Settings</Button>
+            ) : feedbackEnabled ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs text-gray-500">Delay after transaction (minutes)</Label>
+                  <Select
+                    value={String(feedbackDelayMinutes)}
+                    onValueChange={(v) =>
+                      handleUtilityUpdate({
+                        feedback: { ...config!.utility.feedback, delayMinutes: parseInt(v) },
+                      })
+                    }
+                    disabled={saving || !config}
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15">15 minutes</SelectItem>
+                      <SelectItem value="30">30 minutes</SelectItem>
+                      <SelectItem value="60">1 hour</SelectItem>
+                      <SelectItem value="120">2 hours</SelectItem>
+                      <SelectItem value="240">4 hours</SelectItem>
+                      <SelectItem value="1440">24 hours</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs text-gray-500">Feedback template *</Label>
+                  <Select
+                    value={feedbackDefinitionId}
+                    onValueChange={(v) =>
+                      handleUtilityUpdate({
+                        feedback: { ...config!.utility.feedback, definitionId: v },
+                      })
+                    }
+                    disabled={saving || feedbackDefinitionsLoading || !config}
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue
+                        placeholder={
+                          feedbackDefinitionsLoading
+                            ? "Loading definitions..."
+                            : publishedFeedbackDefinitions.length === 0
+                              ? "No feedback definitions"
+                              : "Select a feedback template"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {publishedFeedbackDefinitions.map((d) => (
+                        <SelectItem key={d._id} value={d._id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {feedbackDefinitionsError ? (
+                    <p className="text-xs text-red-600" role="alert">
+                      {feedbackDefinitionsError}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+                Enable feedback to start sending automated feedback requests.
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
