@@ -312,22 +312,6 @@ export default function SegmentEditorDialog(props: {
 
             const parsed = json as SegmentResponse;
             const seg = (parsed?.data || json?.data || json) as Segment;
-
-            if (!isEditing) {
-                const createdId = segmentId(seg);
-                if (createdId) {
-                    try {
-                        await fetch(`/api/segments/${createdId}/recompute`, {
-                            method: "POST",
-                            headers: {
-                                Authorization: `Bearer ${token}`,
-                            },
-                        });
-                    } catch {
-                        // best effort
-                    }
-                }
-            }
             onSaved(seg);
             onOpenChange(false);
         } catch (e) {

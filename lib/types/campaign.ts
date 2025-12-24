@@ -158,8 +158,7 @@ export interface UtilityConfig {
   feedback: {
     enabled: boolean;
     delayMinutes: number;   // 15-1440 minutes
-    templateId: string;
-    templateVariableMappings?: TemplateVariableMappings;
+    definitionId: string;
   };
   reviewRequest: {
     enabled: boolean;

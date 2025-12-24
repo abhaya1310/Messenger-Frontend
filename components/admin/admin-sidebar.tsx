@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/sidebar-provider";
 import { clearAuth } from "@/lib/auth";
 import { clearSelectedOrgId } from "@/lib/selected-org";
-import { getSelectedOrgId } from "@/lib/selected-org";
 
 interface NavItem {
     title: string;
@@ -45,7 +44,7 @@ const navItems: NavItem[] = [
     },
     {
         title: "Feedback",
-        href: "/admin/orgs",
+        href: "/admin/feedback-definitions",
         icon: ThumbsUp,
     },
     {
@@ -106,14 +105,7 @@ export function AdminSidebar() {
         return normalizedPath === href;
     };
 
-    const resolveHref = (href: string) => {
-        if (href !== "/admin/orgs") return href;
-        const selectedOrgId = getSelectedOrgId();
-        if (selectedOrgId) {
-            return `/admin/orgs/${encodeURIComponent(selectedOrgId)}/feedback`;
-        }
-        return "/admin/orgs";
-    };
+    const resolveHref = (href: string) => href;
 
     if (isMobile) {
         return (

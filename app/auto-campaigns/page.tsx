@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -70,6 +70,13 @@ import type {
   CampaignStats,
 } from "@/lib/types/campaign";
 import { handleApiError } from "@/lib/error-handler";
+import { getAuthToken } from "@/lib/auth";
+
+type FeedbackDefinitionListItem = {
+  _id: string;
+  name: string;
+  status?: string;
+};
 
 // Helper to format days offset for display
 function formatDaysOffset(days: number): string {
@@ -96,9 +103,9 @@ function CampaignStatsDisplay({ stats }: { stats: CampaignStats }) {
       <StatsCard label="Sent" value={stats.sent.toLocaleString()} />
       <StatsCard label="Delivered" value={stats.delivered.toLocaleString()} />
       <StatsCard label="Read" value={stats.read.toLocaleString()} />
-      <StatsCard 
-        label="Read Rate" 
-        value={`${stats.readRate.toFixed(1)}%`} 
+      <StatsCard
+        label="Read Rate"
+        value={`${stats.readRate.toFixed(1)}%`}
       />
     </div>
   );
@@ -109,6 +116,10 @@ export default function AutoCampaignsPage() {
   const [stats, setStats] = useState<AutoCampaignStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+
+  const [feedbackDefinitions, setFeedbackDefinitions] = useState<FeedbackDefinitionListItem[]>([]);
+  const [feedbackDefinitionsLoading, setFeedbackDefinitionsLoading] = useState(false);
+  const [feedbackDefinitionsError, setFeedbackDefinitionsError] = useState<string | null>(null);
 
   // Festival dialog state
   const [showFestivalDialog, setShowFestivalDialog] = useState(false);
@@ -128,6 +139,50 @@ export default function AutoCampaignsPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const loadFeedbackDefinitions = async () => {
+    setFeedbackDefinitionsError(null);
+    setFeedbackDefinitionsLoading(true);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        setFeedbackDefinitions([]);
+        return;
+      }
+
+      const res = await fetch("/api/feedback-definitions?status=published", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as any)?.error || (data as any)?.message || "Failed to load feedback definitions");
+      }
+
+      const items = ((data as any)?.data || []) as FeedbackDefinitionListItem[];
+      setFeedbackDefinitions(Array.isArray(items) ? items : []);
+    } catch (e) {
+      setFeedbackDefinitions([]);
+      setFeedbackDefinitionsError(e instanceof Error ? e.message : "Failed to load feedback definitions");
+    } finally {
+      setFeedbackDefinitionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFeedbackDefinitions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const publishedFeedbackDefinitions = useMemo(() => {
+    return feedbackDefinitions
+      .filter((d) => String(d.status || "").toLowerCase() === "published" || !d.status)
+      .slice()
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [feedbackDefinitions]);
 
   async function loadData() {
     setLoading(true);
@@ -165,7 +220,7 @@ export default function AutoCampaignsPage() {
       festivals: [],
       utility: {
         billMessaging: { enabled: false, autoSend: false, templateId: "" },
-        feedback: { enabled: false, delayMinutes: 60, templateId: "" },
+        feedback: { enabled: false, delayMinutes: 60, definitionId: "" },
         reviewRequest: { enabled: false, daysAfterVisit: 1, reviewLink: "", templateId: "" },
       },
       defaultSendTime: "10:00",
@@ -418,15 +473,15 @@ export default function AutoCampaignsPage() {
   // Count active campaigns
   const activeCampaignsCount = config
     ? [
-        config.birthday.enabled,
-        config.anniversary.enabled,
-        config.firstVisit.enabled,
-        config.winback.enabled,
-        ...config.festivals.map(f => f.enabled),
-        config.utility.billMessaging.enabled,
-        config.utility.feedback.enabled,
-        config.utility.reviewRequest.enabled,
-      ].filter(Boolean).length
+      config.birthday.enabled,
+      config.anniversary.enabled,
+      config.firstVisit.enabled,
+      config.winback.enabled,
+      ...config.festivals.map(f => f.enabled),
+      config.utility.billMessaging.enabled,
+      config.utility.feedback.enabled,
+      config.utility.reviewRequest.enabled,
+    ].filter(Boolean).length
     : 0;
 
   if (loading) {
@@ -1013,6 +1068,44 @@ export default function AutoCampaignsPage() {
                           <SelectItem value="1440">24 hours</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Feedback template *</Label>
+                      <Select
+                        value={config.utility.feedback.definitionId || ""}
+                        onValueChange={(v) =>
+                          handleUtilityUpdate({
+                            feedback: { ...config.utility.feedback, definitionId: v },
+                          })
+                        }
+                        disabled={saving === "utility" || feedbackDefinitionsLoading}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue
+                            placeholder={
+                              feedbackDefinitionsLoading
+                                ? "Loading definitions..."
+                                : publishedFeedbackDefinitions.length === 0
+                                  ? "No feedback definitions"
+                                  : "Select a feedback template"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {publishedFeedbackDefinitions.map((d) => (
+                            <SelectItem key={d._id} value={d._id}>
+                              {d.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {feedbackDefinitionsError ? (
+                        <p className="text-xs text-red-600" role="alert">
+                          {feedbackDefinitionsError}
+                        </p>
+                      ) : null}
                     </div>
                     {stats?.feedback && <CampaignStatsDisplay stats={stats.feedback} />}
                   </CardContent>
