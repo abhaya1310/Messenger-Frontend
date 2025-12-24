@@ -37,11 +37,6 @@ type SegmentDraft = {
     totalSpend: NumericDraft;
     recencyDays: NumericDraft;
 
-    birthdayBefore: string;
-    birthdayAfter: string;
-    anniversaryBefore: string;
-    anniversaryAfter: string;
-
     outletInclude: string;
     outletExclude: string;
 
@@ -97,18 +92,6 @@ const templates: SegmentTemplate[] = [
         name: "Lost",
         rules: { recencyDays: { gt: 180 } },
     },
-    {
-        id: "birthday-7",
-        label: "Birthday in next 7 days",
-        name: "Birthdays (Next 7d)",
-        rules: { birthdayWindowDays: { before: 7 } },
-    },
-    {
-        id: "anniversary-7",
-        label: "Anniversary in next 7 days",
-        name: "Anniversaries (Next 7d)",
-        rules: { anniversaryWindowDays: { before: 7 } },
-    },
 ];
 
 async function safeJson(res: Response) {
@@ -140,10 +123,6 @@ function defaultDraft(): SegmentDraft {
         visitCount: { mode: "none" },
         totalSpend: { mode: "none" },
         recencyDays: { mode: "none" },
-        birthdayBefore: "",
-        birthdayAfter: "",
-        anniversaryBefore: "",
-        anniversaryAfter: "",
         outletInclude: "",
         outletExclude: "",
         excludeSuspectedEmployee: true,
@@ -187,12 +166,6 @@ function draftFromSegment(s: Segment): SegmentDraft {
         visitCount: numericDraftFromRule(rules.visitCount),
         totalSpend: numericDraftFromRule(rules.totalSpend),
         recencyDays: numericDraftFromRule(rules.recencyDays),
-        birthdayBefore: rules.birthdayWindowDays?.before !== undefined ? String(rules.birthdayWindowDays.before) : "",
-        birthdayAfter: rules.birthdayWindowDays?.after !== undefined ? String(rules.birthdayWindowDays.after) : "",
-        anniversaryBefore:
-            rules.anniversaryWindowDays?.before !== undefined ? String(rules.anniversaryWindowDays.before) : "",
-        anniversaryAfter:
-            rules.anniversaryWindowDays?.after !== undefined ? String(rules.anniversaryWindowDays.after) : "",
         outletInclude: (rules.outlet?.include || []).join(", "),
         outletExclude: (rules.outlet?.exclude || []).join(", "),
         excludeSuspectedEmployee: rules.excludeFlags?.suspectedEmployee ?? true,
@@ -211,24 +184,6 @@ function rulesFromDraft(d: SegmentDraft): SegmentRules {
     if (visitCount) rules.visitCount = visitCount;
     if (totalSpend) rules.totalSpend = totalSpend;
     if (recencyDays) rules.recencyDays = recencyDays;
-
-    const birthdayBefore = parseNumber(d.birthdayBefore);
-    const birthdayAfter = parseNumber(d.birthdayAfter);
-    if (birthdayBefore !== undefined || birthdayAfter !== undefined) {
-        rules.birthdayWindowDays = {
-            ...(birthdayBefore !== undefined ? { before: birthdayBefore } : {}),
-            ...(birthdayAfter !== undefined ? { after: birthdayAfter } : {}),
-        };
-    }
-
-    const anniversaryBefore = parseNumber(d.anniversaryBefore);
-    const anniversaryAfter = parseNumber(d.anniversaryAfter);
-    if (anniversaryBefore !== undefined || anniversaryAfter !== undefined) {
-        rules.anniversaryWindowDays = {
-            ...(anniversaryBefore !== undefined ? { before: anniversaryBefore } : {}),
-            ...(anniversaryAfter !== undefined ? { after: anniversaryAfter } : {}),
-        };
-    }
 
     const include = parseCsv(d.outletInclude);
     const exclude = parseCsv(d.outletExclude);
@@ -357,6 +312,22 @@ export default function SegmentEditorDialog(props: {
 
             const parsed = json as SegmentResponse;
             const seg = (parsed?.data || json?.data || json) as Segment;
+
+            if (!isEditing) {
+                const createdId = segmentId(seg);
+                if (createdId) {
+                    try {
+                        await fetch(`/api/segments/${createdId}/recompute`, {
+                            method: "POST",
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                            },
+                        });
+                    } catch {
+                        // best effort
+                    }
+                }
+            }
             onSaved(seg);
             onOpenChange(false);
         } catch (e) {
@@ -368,11 +339,11 @@ export default function SegmentEditorDialog(props: {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{isEditing ? "Edit segment" : "Create segment"}</DialogTitle>
                     <DialogDescription>
-                        Build segments based on spend, visit frequency, recency, occasions and outlet targeting.
+                        Build segments based on spend, visit frequency, recency and outlet targeting.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -451,51 +422,6 @@ export default function SegmentEditorDialog(props: {
                                 onChange={(v) => setDraft((p) => ({ ...p, recencyDays: v }))}
                                 unitHint="days"
                             />
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Occasions</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>Birthday window</Label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <Input
-                                        inputMode="numeric"
-                                        placeholder="Before (days)"
-                                        value={draft.birthdayBefore}
-                                        onChange={(e) => setDraft((p) => ({ ...p, birthdayBefore: e.target.value }))}
-                                    />
-                                    <Input
-                                        inputMode="numeric"
-                                        placeholder="After (days)"
-                                        value={draft.birthdayAfter}
-                                        onChange={(e) => setDraft((p) => ({ ...p, birthdayAfter: e.target.value }))}
-                                    />
-                                </div>
-                                <p className="text-xs text-muted-foreground">Before: upcoming within N days. After: occurred within last N days.</p>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>Anniversary window</Label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <Input
-                                        inputMode="numeric"
-                                        placeholder="Before (days)"
-                                        value={draft.anniversaryBefore}
-                                        onChange={(e) => setDraft((p) => ({ ...p, anniversaryBefore: e.target.value }))}
-                                    />
-                                    <Input
-                                        inputMode="numeric"
-                                        placeholder="After (days)"
-                                        value={draft.anniversaryAfter}
-                                        onChange={(e) => setDraft((p) => ({ ...p, anniversaryAfter: e.target.value }))}
-                                    />
-                                </div>
-                                <p className="text-xs text-muted-foreground">Before: upcoming within N days. After: occurred within last N days.</p>
-                            </div>
                         </CardContent>
                     </Card>
 

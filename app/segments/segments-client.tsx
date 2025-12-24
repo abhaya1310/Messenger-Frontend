@@ -67,6 +67,14 @@ export default function SegmentsClient() {
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const pollingRef = useRef<Map<string, number>>(new Map());
 
+    const [ordersStatus, setOrdersStatus] = useState<
+        | null
+        | { state: "idle" }
+        | { state: "loading" }
+        | { state: "ok"; hasOrders: boolean; count?: number }
+        | { state: "error"; message: string }
+    >({ state: "idle" });
+
     const totalReadySize = useMemo(() => {
         const sizes = segments
             .filter((s) => (s.status || "").toLowerCase() === "ready")
@@ -85,6 +93,33 @@ export default function SegmentsClient() {
         if (existing) {
             window.clearInterval(existing);
             pollingRef.current.delete(id);
+        }
+    };
+
+    const checkOrdersExist = async () => {
+        setOrdersStatus({ state: "loading" });
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch("/api/orders?limit=1", {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const json = await safeJson(res);
+            if (!res.ok) {
+                throw new Error(json?.error || json?.message || "Failed to load orders.");
+            }
+
+            const items = (json?.data?.items || json?.items || []) as any[];
+            const hasOrders = Array.isArray(items) ? items.length > 0 : !!items;
+            const count = typeof json?.data?.total === "number" ? json.data.total : undefined;
+            setOrdersStatus({ state: "ok", hasOrders, ...(count !== undefined ? { count } : {}) });
+        } catch (e) {
+            setOrdersStatus({ state: "error", message: e instanceof Error ? e.message : "Failed to check orders." });
         }
     };
 
@@ -333,6 +368,8 @@ export default function SegmentsClient() {
                             const isActionLoading = actionLoadingId === id;
                             const customers = typeof s.estimatedSize === "number" ? s.estimatedSize : undefined;
                             const pct = customers !== undefined && totalReadySize > 0 ? Math.round((customers / totalReadySize) * 100) : undefined;
+                            const isReady = (s.status || "").toLowerCase() === "ready";
+                            const isZero = isReady && customers === 0;
 
                             return (
                                 <Card key={id || `${idx}`} className={`${bg} border-none`}>
@@ -354,6 +391,55 @@ export default function SegmentsClient() {
                                             <div className="text-4xl font-semibold leading-none">{pct !== undefined ? `${pct}%` : "—%"}</div>
                                             <div className="text-sm text-muted-foreground">{formatNumber(customers)} Customers</div>
                                         </div>
+
+                                        {isZero ? (
+                                            <div className="rounded-md border bg-white/50 p-3 space-y-2">
+                                                <div className="text-xs font-medium text-gray-700">Seeing 0 customers?</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    Use the checks below to troubleshoot.
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={checkOrdersExist}
+                                                        disabled={ordersStatus?.state === "loading"}
+                                                        className="gap-2"
+                                                    >
+                                                        {ordersStatus?.state === "loading" ? (
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                        ) : null}
+                                                        Check orders exist
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => onRecompute(s)}
+                                                        disabled={isActionLoading}
+                                                        className="gap-2"
+                                                    >
+                                                        {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                                                        Recompute segment
+                                                    </Button>
+                                                </div>
+
+                                                {ordersStatus?.state === "ok" ? (
+                                                    <div className="text-xs text-muted-foreground">
+                                                        Orders: {ordersStatus.hasOrders ? "Found" : "None found"}
+                                                        {typeof ordersStatus.count === "number" ? ` (total: ${formatNumber(ordersStatus.count)})` : ""}
+                                                    </div>
+                                                ) : null}
+                                                {ordersStatus?.state === "error" ? (
+                                                    <div className="text-xs text-destructive" role="alert">
+                                                        Orders check failed: {ordersStatus.message}
+                                                    </div>
+                                                ) : null}
+
+                                                <div className="text-xs text-muted-foreground">
+                                                    Guests check: a user guests endpoint is not exposed yet.
+                                                </div>
+                                            </div>
+                                        ) : null}
 
                                         <div className="text-xs text-muted-foreground space-y-1">
                                             <div>Last computed: {s.lastComputedAt ? new Date(s.lastComputedAt).toLocaleString() : "—"}</div>
