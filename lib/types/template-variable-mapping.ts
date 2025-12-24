@@ -3,7 +3,7 @@ export type MappingSource = "customer" | "transaction" | "static";
 export type TemplateVariableMapping =
     | { source: "customer"; path: string }
     | { source: "transaction"; path: string }
-    | { source: "static"; value: string };
+    | { source: "static"; value?: string };
 
 export type TemplateVariableMappings = Record<string, TemplateVariableMapping>;
 

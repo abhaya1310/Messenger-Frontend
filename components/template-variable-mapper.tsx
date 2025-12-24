@@ -52,7 +52,7 @@ function setMappingForSource(opts: {
     if (opts.source === "transaction") {
         return { source: "transaction", path: opts.transactionOptions?.[0]?.value || "" };
     }
-    return { source: "static", value: "" };
+    return { source: "static" };
 }
 
 export function validateTemplateVariableMappings(params: {
@@ -70,7 +70,6 @@ export function validateTemplateVariableMappings(params: {
         }
 
         if (mapping.source === "static") {
-            if (!String(mapping.value ?? "").trim()) invalid.push(v.index);
             continue;
         }
 
@@ -102,7 +101,7 @@ export function TemplateVariableMapper(props: Props) {
             </CardHeader>
             <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">
-                    Choose where each template variable should come from (Customer / Transaction) or set a fixed value.
+                    Choose where each template variable should come from (Customer / Transaction), or let the end-user enter it.
                 </p>
 
                 <div className="space-y-3">
@@ -157,7 +156,7 @@ export function TemplateVariableMapper(props: Props) {
                                             <SelectContent>
                                                 <SelectItem value="customer">Customer field</SelectItem>
                                                 <SelectItem value="transaction">Transaction field</SelectItem>
-                                                <SelectItem value="static">Set your own</SelectItem>
+                                                <SelectItem value="static">User enters value</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -218,19 +217,10 @@ export function TemplateVariableMapper(props: Props) {
 
                                     {source === "static" ? (
                                         <div className="space-y-1">
-                                            <Label className="text-xs">Static value</Label>
-                                            <Input
-                                                value={(mapping as any)?.value || ""}
-                                                onChange={(e) => {
-                                                    const value = e.target.value;
-                                                    const next = {
-                                                        ...(props.value || {}),
-                                                        [key]: { source: "static", value },
-                                                    } satisfies TemplateVariableMappings;
-                                                    props.onChange(next);
-                                                }}
-                                                placeholder="Enter fixed text"
-                                            />
+                                            <Label className="text-xs">User-entered value</Label>
+                                            <div className="text-xs text-muted-foreground">
+                                                The end-user will enter this value. Use dummy/sample values elsewhere for preview.
+                                            </div>
                                         </div>
                                     ) : null}
                                 </div>

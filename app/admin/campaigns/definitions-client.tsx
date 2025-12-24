@@ -14,6 +14,7 @@ import { Loader2, Megaphone, Plus, RefreshCw, Search, Trash2, UploadCloud } from
 import { getAuthToken } from "@/lib/auth";
 import type { Template } from "@/lib/api";
 import { TemplateVariableMapper, validateTemplateVariableMappings } from "@/components/template-variable-mapper";
+import { MessagePreview } from "@/components/message-preview";
 import type {
     CampaignDefinition,
     CampaignDefinitionStatus,
@@ -27,7 +28,30 @@ import { CUSTOMER_FIELD_OPTIONS, TRANSACTION_FIELD_OPTIONS } from "@/lib/types/t
 type TemplateVariable = {
     index: number;
     label: string;
+    context?: string;
 };
+
+function substituteTemplateText(params: {
+    text?: string;
+    sampleValues: Record<string, string>;
+    mappings: TemplateVariableMappings;
+}): string {
+    const raw = params.text || "";
+    if (!raw) return "";
+
+    return raw.replace(/\{\{(\d+)\}\}/g, (_match, idxRaw) => {
+        const idx = String(idxRaw);
+        const dummy = params.sampleValues?.[idx];
+        if (dummy && String(dummy).trim()) return String(dummy);
+
+        const mapping = params.mappings?.[idx];
+        if (!mapping) return `{{${idx}}}`;
+
+        if (mapping.source === "customer") return `[customer.${mapping.path}]`;
+        if (mapping.source === "transaction") return `[transaction.${mapping.path}]`;
+        return "[user input]";
+    });
+}
 
 type UpsertFormState = {
     key: string;
@@ -125,6 +149,48 @@ export default function AdminCampaignDefinitionsClient() {
         return out.map((t) => ({ name: t.name, category: t.category, language: t.language }));
     }, [templates, form.templateName, form.templateCategory, form.templateLanguage]);
 
+    const selectedTemplateForPreview = useMemo(() => {
+        if (!form.templateName) return null;
+        return (
+            templates.find((t) => t.name === form.templateName && t.language === form.templateLanguage) ||
+            templates.find((t) => t.name === form.templateName) ||
+            null
+        );
+    }, [templates, form.templateName, form.templateLanguage]);
+
+    const previewParts = useMemo(() => {
+        const components: any[] = (selectedTemplateForPreview as any)?.components || [];
+        const headerText = components.find((c) => c.type === "HEADER" && c.format === "TEXT" && typeof c.text === "string")?.text;
+        const bodyText = components.find((c) => c.type === "BODY" && typeof c.text === "string")?.text;
+        const footerText = components.find((c) => c.type === "FOOTER" && typeof c.text === "string")?.text;
+
+        return {
+            headerText,
+            bodyText,
+            footerText,
+        };
+    }, [selectedTemplateForPreview]);
+
+    const previewText = useMemo(() => {
+        const header = substituteTemplateText({
+            text: previewParts.headerText,
+            sampleValues: form.sampleValues,
+            mappings: form.templateVariableMappings,
+        });
+        const body = substituteTemplateText({
+            text: previewParts.bodyText,
+            sampleValues: form.sampleValues,
+            mappings: form.templateVariableMappings,
+        });
+        const footer = substituteTemplateText({
+            text: previewParts.footerText,
+            sampleValues: form.sampleValues,
+            mappings: form.templateVariableMappings,
+        });
+
+        return [header, body, footer].filter(Boolean).join("\n\n");
+    }, [previewParts.headerText, previewParts.bodyText, previewParts.footerText, form.sampleValues, form.templateVariableMappings]);
+
     const filtered = useMemo(() => {
         return definitions
             .filter((d) => (statusFilter === "all" ? true : d.status === statusFilter))
@@ -218,7 +284,13 @@ export default function AdminCampaignDefinitionsClient() {
 
     const extractAnalyzeVariables = (payload: any): TemplateVariable[] => {
         const vars = payload?.data?.variables ?? payload?.variables;
-        return Array.isArray(vars) ? (vars as TemplateVariable[]) : [];
+        return Array.isArray(vars)
+            ? (vars as any[]).map((v) => ({
+                index: Number((v as any)?.index),
+                label: String((v as any)?.label || ""),
+                context: typeof (v as any)?.context === "string" ? (v as any).context : "",
+            }))
+            : [];
     };
 
     const openCreate = () => {
@@ -772,7 +844,7 @@ export default function AdminCampaignDefinitionsClient() {
                         <div className="mt-6 border-t pt-4 space-y-3">
                             <h3 className="text-sm font-medium text-gray-900">Template Variables</h3>
                             <p className="text-xs text-gray-500">
-                                Provide sample values for each variable. These will be used only for preview in the campaign catalog.
+                                Provide dummy values for preview. These are shown to end-users as an example.
                             </p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {form.variables.map((v) => {
@@ -784,7 +856,7 @@ export default function AdminCampaignDefinitionsClient() {
                                                 {v.label ? ` — ${v.label}` : ""}
                                             </div>
                                             <Input
-                                                placeholder="Sample value"
+                                                placeholder="Dummy value"
                                                 value={form.sampleValues[key] || ""}
                                                 onChange={(e) => {
                                                     const value = e.target.value;
@@ -804,13 +876,23 @@ export default function AdminCampaignDefinitionsClient() {
                         </div>
                     )}
 
+                    {form.templateName && previewText ? (
+                        <div className="mt-6 border-t pt-4 space-y-3">
+                            <h3 className="text-sm font-medium text-gray-900">Template Preview</h3>
+                            <p className="text-xs text-gray-500">
+                                Preview uses your dummy values. For mapped fields, we show a placeholder like [customer.name].
+                            </p>
+                            <MessagePreview templateName={form.templateName} language={form.templateLanguage} preview={previewText} />
+                        </div>
+                    ) : null}
+
                     {form.variables.length > 0 && (
                         <div className="mt-6 border-t pt-4">
                             <TemplateVariableMapper
                                 templateVariables={form.variables.map((v) => ({
                                     index: v.index,
                                     label: v.label,
-                                    context: "",
+                                    context: v.context || "",
                                     required: true,
                                 }))}
                                 value={form.templateVariableMappings || {}}
