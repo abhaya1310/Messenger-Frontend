@@ -14,6 +14,13 @@ async function parseBackendResponse(res: Response) {
     }
 }
 
+function withProxyHeaders(response: NextResponse, params: { backendUrl: string; backendStatus: number }) {
+    response.headers.set('x-proxy-backend-url', params.backendUrl);
+    response.headers.set('x-proxy-backend-status', String(params.backendStatus));
+    response.headers.set('x-proxy-route', '/api/admin/feedback-definitions/[id]');
+    return response;
+}
+
 export async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
     const authHeaders = await getAdminAuthHeaders(request);
     if (!authHeaders) {
@@ -22,22 +29,54 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
     const { id } = await ctx.params;
 
-    const res = await fetch(`${getBackendBaseUrl()}/api/admin/feedback-definitions/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders,
-        },
-    });
+    const backendUrl = `${getBackendBaseUrl()}/api/admin/feedback-definitions/${encodeURIComponent(id)}`;
+    let res: Response;
+    try {
+        res = await fetch(backendUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+            },
+        });
+    } catch (e) {
+        return withProxyHeaders(
+            NextResponse.json(
+                {
+                    error: 'Bad Gateway',
+                    message: e instanceof Error ? e.message : 'Failed to reach backend',
+                    backendUrl,
+                },
+                { status: 502 }
+            ),
+            { backendUrl, backendStatus: 0 }
+        );
+    }
 
     if (res.status === 401) {
         const out = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         clearAdminSessionCookie(out);
-        return out;
+        return withProxyHeaders(out, { backendUrl, backendStatus: res.status });
     }
 
     const data = await parseBackendResponse(res);
-    return NextResponse.json(data, { status: res.status });
+    if (res.status === 404) {
+        return withProxyHeaders(
+            NextResponse.json(
+                {
+                    error: 'Not Found',
+                    message: 'Backend route not found',
+                    backendUrl,
+                    backendStatus: res.status,
+                    backendResponse: data,
+                },
+                { status: 404 }
+            ),
+            { backendUrl, backendStatus: res.status }
+        );
+    }
+
+    return withProxyHeaders(NextResponse.json(data, { status: res.status }), { backendUrl, backendStatus: res.status });
 }
 
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -55,23 +94,55 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
 
-    const res = await fetch(`${getBackendBaseUrl()}/api/admin/feedback-definitions/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders,
-        },
-        body: JSON.stringify(body),
-    });
+    const backendUrl = `${getBackendBaseUrl()}/api/admin/feedback-definitions/${encodeURIComponent(id)}`;
+    let res: Response;
+    try {
+        res = await fetch(backendUrl, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+            },
+            body: JSON.stringify(body),
+        });
+    } catch (e) {
+        return withProxyHeaders(
+            NextResponse.json(
+                {
+                    error: 'Bad Gateway',
+                    message: e instanceof Error ? e.message : 'Failed to reach backend',
+                    backendUrl,
+                },
+                { status: 502 }
+            ),
+            { backendUrl, backendStatus: 0 }
+        );
+    }
 
     if (res.status === 401) {
         const out = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         clearAdminSessionCookie(out);
-        return out;
+        return withProxyHeaders(out, { backendUrl, backendStatus: res.status });
     }
 
     const data = await parseBackendResponse(res);
-    return NextResponse.json(data, { status: res.status });
+    if (res.status === 404) {
+        return withProxyHeaders(
+            NextResponse.json(
+                {
+                    error: 'Not Found',
+                    message: 'Backend route not found',
+                    backendUrl,
+                    backendStatus: res.status,
+                    backendResponse: data,
+                },
+                { status: 404 }
+            ),
+            { backendUrl, backendStatus: res.status }
+        );
+    }
+
+    return withProxyHeaders(NextResponse.json(data, { status: res.status }), { backendUrl, backendStatus: res.status });
 }
 
 export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -82,20 +153,52 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
 
     const { id } = await ctx.params;
 
-    const res = await fetch(`${getBackendBaseUrl()}/api/admin/feedback-definitions/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders,
-        },
-    });
+    const backendUrl = `${getBackendBaseUrl()}/api/admin/feedback-definitions/${encodeURIComponent(id)}`;
+    let res: Response;
+    try {
+        res = await fetch(backendUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+            },
+        });
+    } catch (e) {
+        return withProxyHeaders(
+            NextResponse.json(
+                {
+                    error: 'Bad Gateway',
+                    message: e instanceof Error ? e.message : 'Failed to reach backend',
+                    backendUrl,
+                },
+                { status: 502 }
+            ),
+            { backendUrl, backendStatus: 0 }
+        );
+    }
 
     if (res.status === 401) {
         const out = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         clearAdminSessionCookie(out);
-        return out;
+        return withProxyHeaders(out, { backendUrl, backendStatus: res.status });
     }
 
     const data = await parseBackendResponse(res);
-    return NextResponse.json(data, { status: res.status });
+    if (res.status === 404) {
+        return withProxyHeaders(
+            NextResponse.json(
+                {
+                    error: 'Not Found',
+                    message: 'Backend route not found',
+                    backendUrl,
+                    backendStatus: res.status,
+                    backendResponse: data,
+                },
+                { status: 404 }
+            ),
+            { backendUrl, backendStatus: res.status }
+        );
+    }
+
+    return withProxyHeaders(NextResponse.json(data, { status: res.status }), { backendUrl, backendStatus: res.status });
 }
