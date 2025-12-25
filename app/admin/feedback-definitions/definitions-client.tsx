@@ -105,6 +105,47 @@ export default function AdminFeedbackDefinitionsClient() {
     const [mappingInvalidIndices, setMappingInvalidIndices] = useState<number[]>([]);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
+    const onPublish = async (d: FeedbackDefinition) => {
+        if (!d?._id) return;
+        if (backendMissing) {
+            setError("Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions.");
+            return;
+        }
+
+        setError(null);
+        setActionLoadingId(d._id);
+        try {
+            const token = getAuthToken();
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (token) headers.Authorization = `Bearer ${token}`;
+
+            const res = await fetch(`/api/admin/feedback-definitions/${encodeURIComponent(d._id)}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ status: "published" } satisfies UpdateFeedbackDefinitionRequest),
+            });
+
+            const data = await res.json().catch(() => null);
+            if (res.status === 404) {
+                setBackendMissing(true);
+                throw new Error(
+                    "Feedback Definitions backend endpoints are not deployed. Backend must implement /api/admin/feedback-definitions to enable publishing."
+                );
+            }
+            if (!res.ok) {
+                const message = (data as any)?.error || (data as any)?.message || "Failed to publish feedback definition";
+                throw new Error(message);
+            }
+
+            const saved = ((data as any)?.data || data) as FeedbackDefinition;
+            setDefinitions((prev) => prev.map((x) => (x._id === d._id ? { ...x, ...saved, status: "published" } : x)));
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to publish feedback definition");
+        } finally {
+            setActionLoadingId(null);
+        }
+    };
+
     const templateOptions = useMemo(() => {
         const approved = templates.filter((t) => t.status === "APPROVED");
         const base = (approved.length > 0 ? approved : templates)
@@ -603,6 +644,7 @@ export default function AdminFeedbackDefinitionsClient() {
                     <div className="grid grid-cols-1 gap-4">
                         {filtered.map((d) => {
                             const busy = actionLoadingId === d._id;
+                            const isDraft = String(d.status || "").toLowerCase() === "draft";
                             return (
                                 <Card key={d._id}>
                                     <CardHeader className="pb-3">
@@ -637,6 +679,18 @@ export default function AdminFeedbackDefinitionsClient() {
                                             <Button variant="outline" size="sm" onClick={() => openEdit(d)} disabled={busy}>
                                                 Edit
                                             </Button>
+
+                                            {isDraft ? (
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => onPublish(d)}
+                                                    disabled={busy}
+                                                    className="gap-2"
+                                                >
+                                                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                                    Publish
+                                                </Button>
+                                            ) : null}
 
                                             <Button
                                                 variant="outline"
