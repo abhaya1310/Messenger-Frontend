@@ -250,7 +250,7 @@ export default function SegmentsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
-            const res = await fetch(`/api/segments/${id}/recompute`, {
+            const res = await fetch(`/api/segments/${id}/recompute?processNow=true`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,

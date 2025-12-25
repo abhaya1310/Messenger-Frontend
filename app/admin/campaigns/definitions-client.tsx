@@ -100,6 +100,19 @@ function safeJsonStringify(value: unknown) {
     }
 }
 
+function extractTemplateVariableMappings(definition: CampaignDefinition): TemplateVariableMappings {
+    const d: any = definition as any;
+    return (
+        d?.templateVariableMappings ||
+        d?.template_variable_mappings ||
+        d?.template?.templateVariableMappings ||
+        d?.template?.template_variable_mappings ||
+        d?.template?.preview?.templateVariableMappings ||
+        d?.template?.preview?.template_variable_mappings ||
+        {}
+    );
+}
+
 export default function AdminCampaignDefinitionsClient() {
     const [definitions, setDefinitions] = useState<CampaignDefinition[]>([]);
     const [loading, setLoading] = useState(true);
@@ -223,7 +236,13 @@ export default function AdminCampaignDefinitionsClient() {
                 throw new Error(message);
             }
 
-            setDefinitions(((data as any)?.data || []) as CampaignDefinition[]);
+            const raw = (((data as any)?.data || []) as CampaignDefinition[]) ?? [];
+            setDefinitions(
+                raw.map((d) => ({
+                    ...d,
+                    templateVariableMappings: extractTemplateVariableMappings(d),
+                }))
+            );
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load campaign definitions");
         } finally {
@@ -308,6 +327,8 @@ export default function AdminCampaignDefinitionsClient() {
         setAnalyzeError(null);
         setMappingInvalidIndices([]);
 
+        const normalizedMappings = extractTemplateVariableMappings(d);
+
         const baseForm: UpsertFormState = {
             key: d.key,
             name: d.name,
@@ -317,7 +338,7 @@ export default function AdminCampaignDefinitionsClient() {
             templateCategory: d.template?.category || "MARKETING",
             variables: [],
             sampleValues: d.template?.preview?.sampleValues || {},
-            templateVariableMappings: d.templateVariableMappings || {},
+            templateVariableMappings: normalizedMappings,
         };
 
         setForm(baseForm);

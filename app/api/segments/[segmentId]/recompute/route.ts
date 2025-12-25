@@ -30,7 +30,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ segmen
 
     const { segmentId } = await ctx.params;
 
-    const res = await fetch(`${getBackendBaseUrl()}/api/segments/${segmentId}/recompute`, {
+    const url = new URL(request.url);
+    const query = url.searchParams.toString();
+    const backendUrl = `${getBackendBaseUrl()}/api/segments/${segmentId}/recompute${query ? `?${query}` : ''}`;
+
+    const res = await fetch(backendUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

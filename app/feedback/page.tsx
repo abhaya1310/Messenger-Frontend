@@ -2,58 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import {
-  MessageCircle,
-  ThumbsDown,
-  ThumbsUp,
-  Info,
-  Star,
-  AlertCircle,
-  Loader2,
-  RefreshCcw,
-} from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
+import { Loader2, RefreshCcw, Database, CheckCircle2, AlertCircle } from "lucide-react";
 import { getAuthToken } from "@/lib/auth";
-import { fetchCampaignConfig, updateUtilityConfig } from "@/lib/api";
+import { fetchCampaignConfig, fetchOrgSettings, updateUtilityConfig } from "@/lib/api";
 import type { CampaignConfig, UtilityConfig } from "@/lib/types/campaign";
-
-const kpis = [
-  { label: "Total Feedback", value: "1" },
-  { label: "Avg. Rating", value: "2.00" },
-  { label: "Channel", value: "Whatsapp Utility" },
-];
-
-const sentiment = [
-  { label: "Positive Feedback", value: "0%", icon: ThumbsUp, tone: "text-green-600" },
-  { label: "Negative Feedback", value: "100%", icon: ThumbsDown, tone: "text-red-500" },
-  { label: "Neutral Feedback", value: "0%", icon: MessageCircle, tone: "text-yellow-500" },
-];
-
-const suggestionTiles = [
-  {
-    title: "Boost your online reputation",
-    description:
-      "Ask your happy customers to share a review on Google, Facebook etc.",
-    action: "Create request",
-  },
-  {
-    title: "Automate apologies on bad experiences",
-    description:
-      "Send a make-good coupon via WhatsApp whenever you get a low score.",
-    action: "Design apology flow",
-  },
-];
+import type { OrgSettings } from "@/lib/types/org-settings";
+import type { Order, OrdersListResponse } from "@/lib/types/order";
 
 type FeedbackDefinitionListItem = {
   _id: string;
@@ -62,14 +23,24 @@ type FeedbackDefinitionListItem = {
 };
 
 export default function FeedbackPage() {
+  const { orgId } = useAuth();
   const [config, setConfig] = useState<CampaignConfig | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const [feedbackDefinitions, setFeedbackDefinitions] = useState<FeedbackDefinitionListItem[]>([]);
   const [feedbackDefinitionsLoading, setFeedbackDefinitionsLoading] = useState(false);
   const [feedbackDefinitionsError, setFeedbackDefinitionsError] = useState<string | null>(null);
+
+  const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
+  const [orgSettingsLoading, setOrgSettingsLoading] = useState(false);
+  const [orgSettingsError, setOrgSettingsError] = useState<string | null>(null);
+
+  const [ordersTodayCount, setOrdersTodayCount] = useState<number | null>(null);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
   const publishedFeedbackDefinitions = useMemo(() => {
     return feedbackDefinitions
@@ -80,6 +51,7 @@ export default function FeedbackPage() {
 
   const loadConfig = async () => {
     setError(null);
+    setSavedMessage(null);
     setLoadingConfig(true);
     try {
       const next = await fetchCampaignConfig();
@@ -89,6 +61,82 @@ export default function FeedbackPage() {
       setError(e instanceof Error ? e.message : "Failed to load feedback configuration");
     } finally {
       setLoadingConfig(false);
+    }
+  };
+
+  const loadOrgSettings = async () => {
+    if (!orgId) {
+      setOrgSettings(null);
+      return;
+    }
+
+    setOrgSettingsLoading(true);
+    setOrgSettingsError(null);
+    try {
+      const next = await fetchOrgSettings(orgId);
+      setOrgSettings(next);
+    } catch (e) {
+      setOrgSettings(null);
+      setOrgSettingsError(e instanceof Error ? e.message : "Failed to load organization settings");
+    } finally {
+      setOrgSettingsLoading(false);
+    }
+  };
+
+  const formatDateKey = (d: Date, tz: string) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(d);
+
+    const year = parts.find((p) => p.type === "year")?.value;
+    const month = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+    return `${year}-${month}-${day}`;
+  };
+
+  const loadOrdersTodayCount = async (tz: string) => {
+    const token = getAuthToken();
+    if (!token) {
+      setOrdersTodayCount(null);
+      return;
+    }
+
+    setOrdersLoading(true);
+    setOrdersError(null);
+    try {
+      const res = await fetch("/api/orders?limit=200", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = (await res.json().catch(() => ({}))) as OrdersListResponse;
+      if (!res.ok) {
+        throw new Error((data as any)?.error || (data as any)?.message || "Failed to load orders");
+      }
+
+      const orders = ((data as any)?.data || (data as any)?.orders || []) as Order[];
+      const list = Array.isArray(orders) ? orders : [];
+      const today = formatDateKey(new Date(), tz);
+
+      const count = list.filter((o) => {
+        const createdAtRaw = (o as any)?.createdAt;
+        if (!createdAtRaw) return false;
+        const createdAt = new Date(createdAtRaw);
+        if (Number.isNaN(createdAt.getTime())) return false;
+        return formatDateKey(createdAt, tz) === today;
+      }).length;
+
+      setOrdersTodayCount(count);
+    } catch (e) {
+      setOrdersTodayCount(null);
+      setOrdersError(e instanceof Error ? e.message : "Failed to load orders");
+    } finally {
+      setOrdersLoading(false);
     }
   };
 
@@ -127,16 +175,30 @@ export default function FeedbackPage() {
   useEffect(() => {
     loadConfig();
     loadFeedbackDefinitions();
+    loadOrgSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
+    const posEnabled = !!orgSettings?.services?.posIntegration?.enabled;
+    if (posEnabled) {
+      loadOrdersTodayCount(tz);
+    } else {
+      setOrdersTodayCount(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.timezone, orgSettings?.services?.posIntegration?.enabled, orgSettings?.timezone]);
 
   const handleUtilityUpdate = async (updates: Partial<UtilityConfig>) => {
     if (!config) return;
     setSaving(true);
     setError(null);
+    setSavedMessage(null);
     try {
       const updated = await updateUtilityConfig(updates);
       setConfig({ ...config, utility: updated });
+      setSavedMessage("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
     } finally {
@@ -148,71 +210,42 @@ export default function FeedbackPage() {
   const feedbackDelayMinutes = config?.utility?.feedback?.delayMinutes ?? 60;
   const feedbackDefinitionId = config?.utility?.feedback?.definitionId ?? "";
 
+  const selectedDefinitionName = useMemo(() => {
+    const match = feedbackDefinitions.find((d) => d._id === feedbackDefinitionId);
+    return match?.name || "";
+  }, [feedbackDefinitions, feedbackDefinitionId]);
+
+  const posEnabled = !!orgSettings?.services?.posIntegration?.enabled;
+  const posActive = !!orgSettings?.posApiCredentials?.isActive;
+  const posIntegrationLive = posEnabled && posActive;
+
+  const refreshAll = async () => {
+    await Promise.all([loadConfig(), loadFeedbackDefinitions(), loadOrgSettings()]);
+    const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
+    if (posEnabled) {
+      await loadOrdersTodayCount(tz);
+    }
+  };
+
   return (
     <div className="space-y-8 p-6">
       <section className="rounded-3xl bg-gradient-to-r from-[#c9e7ff] via-[#a7c1ff] to-[#8ac7ff] p-8 text-white shadow-sm">
         <div className="space-y-4 max-w-3xl">
-          <Badge className="w-fit bg-white/20 text-white">What&apos;s New</Badge>
-          <h1 className="text-4xl font-semibold leading-tight">
-            Turn Negative Feedback into Positive Relationships!
-          </h1>
-          <p className="text-lg">
-            With the new feedback feature, you can easily send rewards or
-            apologies to your customers in just a few clicks.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Button variant="secondary" className="bg-white text-[var(--connectnow-accent-strong)]">
-              See how it works
-            </Button>
-            <Button variant="outline" className="bg-white/20 text-white border-white/40">
-              Explore
-            </Button>
-          </div>
+          <Badge className="w-fit bg-white/20 text-white">Feedback</Badge>
+          <h1 className="text-4xl font-semibold leading-tight">Automated feedback requests</h1>
+          <p className="text-lg">Pick a feedback template and enable the service. We will send it automatically after each POS transaction.</p>
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex items-center justify-between">
-            <div>
-              <CardTitle>Feedback Insights</CardTitle>
-              <CardDescription>
-                Track your customer feedback with real-time analytics.
-              </CardDescription>
-            </div>
-            <Badge variant="outline" className="gap-1">
-              <MessageCircle className="h-3.5 w-3.5" />
-              Last 12 months
-            </Badge>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
-            {kpis.map((kpi) => (
-              <div key={kpi.label} className="rounded-2xl border border-dashed border-gray-200 p-4">
-                <p className="text-sm text-gray-500">{kpi.label}</p>
-                <p className="text-3xl font-semibold text-gray-900">
-                  {kpi.value}
-                </p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      <section className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle>Feedback Settings</CardTitle>
-                <CardDescription>Configure when and what to send after visits.</CardDescription>
+                <CardTitle>Setup</CardTitle>
+                <CardDescription>Configure the feedback service for your organization.</CardDescription>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  loadConfig();
-                  loadFeedbackDefinitions();
-                }}
-                disabled={loadingConfig || saving}
-                className="gap-2"
-              >
+              <Button size="sm" variant="outline" onClick={refreshAll} disabled={loadingConfig || saving} className="gap-2">
                 {loadingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                 Refresh
               </Button>
@@ -225,10 +258,16 @@ export default function FeedbackPage() {
               </div>
             ) : null}
 
+            {savedMessage && !saving ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800" role="status">
+                {savedMessage}
+              </div>
+            ) : null}
+
             <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4">
               <div>
-                <p className="text-sm text-gray-500">Channel</p>
-                <p className="font-medium">WhatsApp Utility</p>
+                <p className="text-sm text-gray-500">Service status</p>
+                <p className="font-medium">Feedback Requests</p>
               </div>
               <Switch
                 checked={feedbackEnabled}
@@ -278,7 +317,7 @@ export default function FeedbackPage() {
                     value={feedbackDefinitionId}
                     onValueChange={(v) =>
                       handleUtilityUpdate({
-                        feedback: { ...config!.utility.feedback, definitionId: v },
+                        feedback: { ...config!.utility.feedback, enabled: true, definitionId: v },
                       })
                     }
                     disabled={saving || feedbackDefinitionsLoading || !config}
@@ -316,77 +355,109 @@ export default function FeedbackPage() {
             )}
           </CardContent>
         </Card>
-      </section>
 
-      <section className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Feedback Report</CardTitle>
-            <Info className="h-4 w-4 text-gray-400" />
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
-            {sentiment.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-2xl border border-dashed border-gray-200 p-4 space-y-2"
-              >
-                <item.icon className={`h-6 w-6 ${item.tone}`} />
-                <p className="text-3xl font-semibold">{item.value}</p>
-                <p className="text-sm text-gray-500">{item.label}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Boost your online reputation</CardTitle>
-            <CardDescription>
-              Ask your happy customers to share reviews on Google, Facebook,
-              etc.
-            </CardDescription>
+            <CardTitle>Your service</CardTitle>
+            <CardDescription>What you have configured so far.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-2xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-600">
-                Trigger auto-messages when ratings drop below 3 stars and attach
-                a thank-you coupon when ratings are higher than 4.
-              </p>
+            <div className="rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">Feedback Requests</div>
+                  <div className="text-sm text-gray-600">
+                    {feedbackEnabled && feedbackDefinitionId ? (
+                      <span>
+                        Template: <span className="font-medium">{selectedDefinitionName || feedbackDefinitionId}</span>
+                      </span>
+                    ) : (
+                      <span>Not configured yet</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {feedbackEnabled && feedbackDefinitionId ? (
+                    <Badge variant="outline" className="gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                      Active
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary">Inactive</Badge>
+                  )}
+                </div>
+              </div>
+              {feedbackEnabled && feedbackDefinitionId ? (
+                <div className="mt-3 text-sm text-gray-600">
+                  Delay: <span className="font-medium">{feedbackDelayMinutes} minutes</span>
+                </div>
+              ) : null}
             </div>
-            <Button variant="secondary" className="w-full">
-              Build automation
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        {suggestionTiles.map((tile) => (
-          <Card key={tile.title}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Star className="h-4 w-4 text-yellow-500" />
-                {tile.title}
-              </CardTitle>
-              <CardDescription>{tile.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline">{tile.action}</Button>
-            </CardContent>
-          </Card>
-        ))}
-        <Card className="md:col-span-2 border-dashed">
-          <CardHeader className="flex items-center gap-3">
-            <AlertCircle className="h-6 w-6 text-[var(--connectnow-accent-strong)]" />
-            <div>
-              <CardTitle>Need more insights?</CardTitle>
-              <CardDescription>
-                Connect to your POS or CRM to unlock live restaurant feedback
-                streams.
-              </CardDescription>
+            <div className="rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 font-medium">
+                    <Database className="h-4 w-4" />
+                    POS Integration
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {orgSettingsLoading ? "Loading POS status..." : posEnabled ? "Connected" : "Not connected"}
+                  </div>
+                </div>
+                {posEnabled ? (
+                  <Badge variant="outline" className="gap-1">
+                    {posIntegrationLive ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <AlertCircle className="h-3.5 w-3.5 text-amber-600" />}
+                    {posIntegrationLive ? "Integration live" : "Needs attention"}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">Offline</Badge>
+                )}
+              </div>
+
+              {orgSettingsError ? (
+                <div className="mt-2 text-xs text-red-600" role="alert">
+                  {orgSettingsError}
+                </div>
+              ) : null}
+
+              {posEnabled ? (
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="text-sm text-gray-700">
+                    Orders today:{" "}
+                    {ordersLoading ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                        Loading
+                      </span>
+                    ) : ordersTodayCount === null ? (
+                      <span className="text-gray-500">—</span>
+                    ) : (
+                      <span className="font-semibold">{ordersTodayCount}</span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
+                      loadOrdersTodayCount(tz);
+                    }}
+                    disabled={ordersLoading || !posEnabled}
+                    className="gap-2"
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    Refresh
+                  </Button>
+                </div>
+              ) : null}
+
+              {ordersError ? (
+                <div className="mt-2 text-xs text-red-600" role="alert">
+                  {ordersError}
+                </div>
+              ) : null}
             </div>
-          </CardHeader>
-          <CardContent>
-            <Button>Connect Data Source</Button>
           </CardContent>
         </Card>
       </section>
