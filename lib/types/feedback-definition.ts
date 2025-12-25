@@ -47,6 +47,7 @@ export interface CreateFeedbackDefinitionRequest {
     key: string;
     name: string;
     description?: string;
+    status?: FeedbackDefinitionStatus;
     template: {
         name: string;
         language: string;
@@ -60,6 +61,7 @@ export interface UpdateFeedbackDefinitionRequest {
     key?: string;
     name?: string;
     description?: string;
+    status?: FeedbackDefinitionStatus;
     template?: {
         name?: string;
         language?: string;

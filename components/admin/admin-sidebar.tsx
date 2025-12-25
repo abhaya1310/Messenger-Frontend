@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { clearSelectedOrgId } from "@/lib/selected-org";
+import { useAuth } from "@/components/auth-provider";
 import {
     MessageSquare,
     Megaphone,
@@ -15,10 +18,7 @@ import {
     Activity,
     ThumbsUp,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/sidebar-provider";
-import { clearAuth } from "@/lib/auth";
-import { clearSelectedOrgId } from "@/lib/selected-org";
 
 interface NavItem {
     title: string;
@@ -57,6 +57,7 @@ const navItems: NavItem[] = [
 export function AdminSidebar() {
     const pathname = usePathname();
     const router = useRouter();
+    const { logout } = useAuth();
     const { isCollapsed, setIsCollapsed } = useSidebar();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
@@ -92,7 +93,7 @@ export function AdminSidebar() {
             await fetch("/api/admin/auth/logout", { method: "POST" });
         } finally {
             clearSelectedOrgId();
-            clearAuth();
+            logout();
             router.replace("/login");
         }
     };

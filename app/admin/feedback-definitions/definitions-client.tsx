@@ -34,6 +34,7 @@ type UpsertFormState = {
     key: string;
     name: string;
     description: string;
+    status: FeedbackDefinitionStatus;
     templateName: string;
     templateLanguage: string;
     templateCategory: WhatsAppTemplateCategory;
@@ -47,6 +48,7 @@ function defaultFormState(): UpsertFormState {
         key: "",
         name: "",
         description: "",
+        status: "published",
         templateName: "",
         templateLanguage: "en_US",
         templateCategory: "UTILITY",
@@ -198,7 +200,8 @@ export default function AdminFeedbackDefinitionsClient() {
             if (statusFilter !== "all") params.set("status", statusFilter);
 
             const token = getAuthToken();
-            const res = await fetch(`/api/admin/feedback-definitions?${params.toString()}`, {
+            const qs = params.toString();
+            const res = await fetch(qs ? `/api/admin/feedback-definitions?${qs}` : "/api/admin/feedback-definitions", {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
 
@@ -293,6 +296,7 @@ export default function AdminFeedbackDefinitionsClient() {
             key: d.key,
             name: d.name,
             description: d.description || "",
+            status: d.status || "draft",
             templateName: d.template?.name || "",
             templateLanguage: d.template?.language || "en_US",
             templateCategory: (d.template?.category as WhatsAppTemplateCategory) || "UTILITY",
@@ -399,6 +403,7 @@ export default function AdminFeedbackDefinitionsClient() {
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
+                        status: form.status,
                         template: templatePayload,
                         templateVariableMappings: form.templateVariableMappings,
                     } satisfies CreateFeedbackDefinitionRequest)
@@ -406,6 +411,7 @@ export default function AdminFeedbackDefinitionsClient() {
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
+                        status: form.status,
                         template: templatePayload,
                         templateVariableMappings: form.templateVariableMappings,
                     } satisfies UpdateFeedbackDefinitionRequest);
@@ -434,10 +440,23 @@ export default function AdminFeedbackDefinitionsClient() {
                 throw new Error(message);
             }
 
+            const saved = ((data as any)?.data || null) as FeedbackDefinition | null;
+            if (saved && saved._id) {
+                setDefinitions((prev) => {
+                    const idx = prev.findIndex((x) => x._id === saved._id);
+                    if (idx >= 0) {
+                        const next = prev.slice();
+                        next[idx] = saved;
+                        return next;
+                    }
+                    return [saved, ...prev];
+                });
+            }
+
             setShowUpsert(false);
             setActiveId(null);
             setForm(defaultFormState());
-            await load();
+            void load();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to save definition");
         } finally {
@@ -659,6 +678,20 @@ export default function AdminFeedbackDefinitionsClient() {
                         <div className="space-y-2 md:col-span-2">
                             <Label>Description</Label>
                             <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Status</Label>
+                            <Select value={form.status} onValueChange={(v) => setForm((p) => ({ ...p, status: v as any }))}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="draft">Draft</SelectItem>
+                                    <SelectItem value="published">Published</SelectItem>
+                                    <SelectItem value="archived">Archived</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div className="space-y-2">
