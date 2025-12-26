@@ -19,6 +19,8 @@ import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Cloc
 import { useAuth } from "@/components/auth-provider";
 import { getAuthToken, getCurrentOrgId } from "@/lib/auth";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
+import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } from "@/lib/types/campaign-definition";
+import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
 
 async function parseJsonSafe(res: Response) {
     const text = await res.text();
@@ -96,14 +98,6 @@ function parsePhoneList(value: string): string[] {
         .filter(Boolean);
 }
 
-type ParamMode = "static" | "dynamic";
-
-type ParamDraft = {
-    mode: ParamMode;
-    staticValue: string;
-    dynamicField: string;
-};
-
 export default function CampaignsClient() {
     const router = useRouter();
     const { orgId: authOrgId } = useAuth();
@@ -122,11 +116,18 @@ export default function CampaignsClient() {
 
     const [createName, setCreateName] = useState("");
     const [createDescription, setCreateDescription] = useState("");
+    const [createType, setCreateType] = useState<NonNullable<CreateCampaignRequest["type"]>>("promotional");
 
-    const [createTemplateName, setCreateTemplateName] = useState("");
-    const [createTemplateLanguage, setCreateTemplateLanguage] = useState("en_US");
+    const [definitions, setDefinitions] = useState<CampaignDefinitionSummary[]>([]);
+    const [definitionsLoading, setDefinitionsLoading] = useState(false);
+    const [definitionsError, setDefinitionsError] = useState<string | null>(null);
 
-    const [createParamCount, setCreateParamCount] = useState<string>("0");
+    const [createDefinitionId, setCreateDefinitionId] = useState<string>("");
+    const [definitionDetail, setDefinitionDetail] = useState<CampaignDefinition | null>(null);
+    const [definitionDetailLoading, setDefinitionDetailLoading] = useState(false);
+    const [definitionDetailError, setDefinitionDetailError] = useState<string | null>(null);
+
+    const [userInputValues, setUserInputValues] = useState<Record<number, string>>({});
 
     const [createScheduledAt, setCreateScheduledAt] = useState<string>("");
 
@@ -139,31 +140,22 @@ export default function CampaignsClient() {
     const [createHasEmail, setCreateHasEmail] = useState<"any" | "true" | "false">("any");
     const [createHasBirthday, setCreateHasBirthday] = useState<"any" | "true" | "false">("any");
 
+    const [segments, setSegments] = useState<Array<{ id: string; name: string; status?: string }>>([]);
+    const [segmentsLoading, setSegmentsLoading] = useState(false);
+    const [segmentsError, setSegmentsError] = useState<string | null>(null);
+    const [createSegmentId, setCreateSegmentId] = useState<string>("");
+
     const [createCustomPhoneNumbersRaw, setCreateCustomPhoneNumbersRaw] = useState("");
 
-    const [paramDrafts, setParamDrafts] = useState<Record<number, ParamDraft>>({});
+    const mappingList = useMemo(() => {
+        const raw = (definitionDetail as any)?.templateVariableMappings;
+        const list = Array.isArray(raw) ? (raw as CampaignDefinitionTemplateVariableMapping[]) : [];
+        return list.slice().sort((a, b) => (a.position || 0) - (b.position || 0));
+    }, [definitionDetail]);
 
-    const paramCount = useMemo(() => {
-        const raw = String(createParamCount || "").trim();
-        const n = raw ? Number(raw) : 0;
-        if (!Number.isFinite(n) || n < 0) return 0;
-        return Math.min(Math.floor(n), 50);
-    }, [createParamCount]);
-
-    const paramPositions = useMemo(() => {
-        const out: number[] = [];
-        for (let i = 1; i <= paramCount; i++) out.push(i);
-        return out;
-    }, [paramCount]);
-
-    useEffect(() => {
-        const next: Record<number, ParamDraft> = {};
-        for (const pos of paramPositions) {
-            next[pos] = paramDrafts[pos] || { mode: "static", staticValue: "", dynamicField: "" };
-        }
-        setParamDrafts(next);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [paramPositions.join(",")]);
+    const userInputMappings = useMemo(() => {
+        return mappingList.filter((m) => (m.sourceType || "").toLowerCase() === "user_input");
+    }, [mappingList]);
 
     const filteredCampaigns = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
@@ -256,9 +248,11 @@ export default function CampaignsClient() {
 
         setCreateName("");
         setCreateDescription("");
-        setCreateTemplateName("");
-        setCreateTemplateLanguage("en_US");
-        setCreateParamCount("0");
+        setCreateType("promotional");
+        setCreateDefinitionId("");
+        setDefinitionDetail(null);
+        setDefinitionDetailError(null);
+        setUserInputValues({});
         setCreateScheduledAt("");
 
         setCreateAudienceType("all");
@@ -270,7 +264,116 @@ export default function CampaignsClient() {
         setCreateHasBirthday("any");
 
         setCreateCustomPhoneNumbersRaw("");
-        setParamDrafts({});
+        setCreateSegmentId("");
+
+        loadDefinitions();
+        loadSegments();
+    };
+
+    const loadDefinitions = async () => {
+        setDefinitionsError(null);
+        setDefinitionsLoading(true);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch("/api/campaign-runs/definitions", {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const json = await parseJsonSafe(res);
+            if (!res.ok) {
+                const msg = (json as any)?.error || (json as any)?.message || "Failed to load campaign catalog";
+                throw new Error(msg);
+            }
+
+            const items = ((json as any)?.data || []) as CampaignDefinitionSummary[];
+            setDefinitions(Array.isArray(items) ? items : []);
+        } catch (e) {
+            setDefinitions([]);
+            setDefinitionsError(e instanceof Error ? e.message : "Failed to load campaign catalog");
+        } finally {
+            setDefinitionsLoading(false);
+        }
+    };
+
+    const loadDefinitionDetail = async (id: string) => {
+        setDefinitionDetailError(null);
+        setDefinitionDetailLoading(true);
+        setDefinitionDetail(null);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch(`/api/campaign-runs/definitions/${encodeURIComponent(id)}`, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const json = await parseJsonSafe(res);
+            if (!res.ok) {
+                const msg = (json as any)?.error || (json as any)?.message || "Failed to load definition";
+                throw new Error(msg);
+            }
+
+            const def = ((json as any)?.data || json) as CampaignDefinition;
+            setDefinitionDetail(def);
+
+            const rawMappings = (def as any)?.templateVariableMappings;
+            const mappings = Array.isArray(rawMappings) ? (rawMappings as CampaignDefinitionTemplateVariableMapping[]) : [];
+            const defaults: Record<number, string> = {};
+            for (const m of mappings) {
+                if ((m.sourceType || "").toLowerCase() !== "user_input") continue;
+                defaults[m.position] = "";
+            }
+            setUserInputValues(defaults);
+        } catch (e) {
+            setDefinitionDetail(null);
+            setDefinitionDetailError(e instanceof Error ? e.message : "Failed to load definition");
+        } finally {
+            setDefinitionDetailLoading(false);
+        }
+    };
+
+    const loadSegments = async () => {
+        setSegmentsError(null);
+        setSegmentsLoading(true);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const res = await fetch("/api/segments?limit=50&skip=0", {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const json = await parseJsonSafe(res);
+            if (!res.ok) {
+                const msg = (json as any)?.error || (json as any)?.message || "Failed to load segments";
+                throw new Error(msg);
+            }
+
+            const items = ((json as any)?.data?.items || []) as any[];
+            const next = Array.isArray(items)
+                ? items
+                    .map((s) => ({ id: String(s.id || s._id || ""), name: String(s.name || ""), status: s.status }))
+                    .filter((s) => s.id)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                : [];
+            setSegments(next);
+        } catch (e) {
+            setSegments([]);
+            setSegmentsError(e instanceof Error ? e.message : "Failed to load segments");
+        } finally {
+            setSegmentsLoading(false);
+        }
     };
 
     const createCampaign = async () => {
@@ -280,9 +383,23 @@ export default function CampaignsClient() {
             setError("Please fill in required fields");
             return;
         }
-        if (!createTemplateName.trim() || !createTemplateLanguage.trim()) {
-            setError("Template is required");
+        if (!createDefinitionId) {
+            setError("Please select a campaign from the catalog");
             return;
+        }
+        if (!definitionDetail) {
+            setError("Please wait for the campaign details to load");
+            return;
+        }
+
+        for (const m of userInputMappings) {
+            const required = m.required !== false;
+            if (!required) continue;
+            const v = String(userInputValues?.[m.position] ?? "").trim();
+            if (!v) {
+                setError(`Please provide a value for {{${m.position}}}`);
+                return;
+            }
         }
 
         if (createAudienceType === "custom") {
@@ -291,6 +408,11 @@ export default function CampaignsClient() {
                 setError("Please provide at least one phone number");
                 return;
             }
+        }
+
+        if (createAudienceType === "segment" && !createSegmentId) {
+            setError("Please select a segment");
+            return;
         }
 
         setCreating(true);
@@ -304,22 +426,6 @@ export default function CampaignsClient() {
                 Authorization: `Bearer ${token}`,
             };
             if (orgId) headers["X-ORG-ID"] = orgId;
-
-            const maxIndex = paramCount;
-            const staticParams: string[] = [];
-            const dynamicParameters: Array<{ position: number; field: string }> = [];
-
-            for (let i = 1; i <= maxIndex; i++) {
-                const d = paramDrafts[i] || { mode: "static", staticValue: "", dynamicField: "" };
-                if (d.mode === "dynamic") {
-                    staticParams.push("");
-                    if (String(d.dynamicField || "").trim()) {
-                        dynamicParameters.push({ position: i, field: String(d.dynamicField).trim() });
-                    }
-                } else {
-                    staticParams.push(String(d.staticValue || ""));
-                }
-            }
 
             const filters: any = {};
             const minVisits = safeNumber(createMinVisits);
@@ -337,22 +443,26 @@ export default function CampaignsClient() {
             if (createHasEmail !== "any") filters.hasEmail = createHasEmail === "true";
             if (createHasBirthday !== "any") filters.hasBirthday = createHasBirthday === "true";
 
+            const cleanedUserInputs: Record<string, string> = {};
+            for (const m of userInputMappings) {
+                const val = String(userInputValues?.[m.position] ?? "").trim();
+                if (!val) continue;
+                cleanedUserInputs[String(m.position)] = val;
+            }
+
             const payload: CreateCampaignRequest = {
                 name: createName.trim(),
                 description: createDescription.trim() || undefined,
+                type: createType,
                 scheduledAt: createScheduledAt,
-                template: {
-                    name: createTemplateName.trim(),
-                    language: createTemplateLanguage.trim(),
-                    ...(maxIndex > 0 ? { parameters: staticParams } : {}),
-                    ...(dynamicParameters.length > 0 ? { dynamicParameters } : {}),
-                },
+                campaignDefinitionId: createDefinitionId,
+                ...(Object.keys(cleanedUserInputs).length > 0 ? { userInputParameters: cleanedUserInputs } : {}),
                 audience: {
                     type: createAudienceType,
                     ...(createAudienceType === "custom"
                         ? { customPhoneNumbers: parsePhoneList(createCustomPhoneNumbersRaw) }
-                        : createAudienceType === "all"
-                            ? {}
+                        : createAudienceType === "segment"
+                            ? { segmentId: createSegmentId }
                             : Object.keys(filters).length > 0
                                 ? { filters }
                                 : {}),
@@ -569,117 +679,128 @@ export default function CampaignsClient() {
                                 <Textarea value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Optional" />
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Template Name *</Label>
-                                    <Input
-                                        value={createTemplateName}
-                                        onChange={(e) => setCreateTemplateName(e.target.value)}
-                                        placeholder="template_name"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>Language *</Label>
-                                    <Input value={createTemplateLanguage} onChange={(e) => setCreateTemplateLanguage(e.target.value)} placeholder="en_US" />
-                                </div>
+                            <div className="space-y-2">
+                                <Label>Type *</Label>
+                                <Select value={createType} onValueChange={(v) => setCreateType(v as any)}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="promotional">Promotional</SelectItem>
+                                        <SelectItem value="event">Event</SelectItem>
+                                        <SelectItem value="announcement">Announcement</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Body Parameter Count</Label>
-                                <Input
-                                    value={createParamCount}
-                                    onChange={(e) => setCreateParamCount(e.target.value)}
-                                    placeholder="e.g. 2"
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                    If your template has body variables like {"{{1}}"}, {"{{2}}"}, set this to 2.
-                                </div>
+                                <Label>Campaign *</Label>
+                                <Select
+                                    value={createDefinitionId}
+                                    onValueChange={(v) => {
+                                        setCreateDefinitionId(v);
+                                        if (v) loadDefinitionDetail(v);
+                                    }}
+                                    disabled={definitionsLoading}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue
+                                            placeholder={
+                                                definitionsLoading
+                                                    ? "Loading catalog…"
+                                                    : definitions.length === 0
+                                                        ? "No published campaigns"
+                                                        : "Select a campaign"
+                                            }
+                                        />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {definitions.map((d) => (
+                                            <SelectItem key={d._id} value={d._id}>
+                                                {d.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {definitionsError ? (
+                                    <div className="text-xs text-destructive" role="alert">
+                                        {definitionsError}
+                                    </div>
+                                ) : null}
                             </div>
 
-                            {paramPositions.length > 0 ? (
-                                <div className="border-t pt-4 space-y-3">
-                                    <div>
-                                        <div className="text-sm font-medium">Template Parameters</div>
-                                        <div className="text-xs text-muted-foreground">
-                                            Choose static values or dynamic fields. Dynamic values are resolved by the backend at send time.
+                            {createDefinitionId ? (
+                                <div className="rounded-md border p-4 space-y-2">
+                                    {definitionDetailLoading ? (
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Loading campaign details…
                                         </div>
-                                    </div>
+                                    ) : definitionDetailError ? (
+                                        <div className="text-sm text-destructive" role="alert">
+                                            {definitionDetailError}
+                                        </div>
+                                    ) : definitionDetail ? (
+                                        <>
+                                            <div className="text-sm font-medium">Template</div>
+                                            <div className="text-xs text-muted-foreground break-all">
+                                                {definitionDetail.template?.name} ({definitionDetail.template?.language})
+                                            </div>
+                                            {definitionDetail.template?.preview?.bodyText ? (
+                                                <div className="mt-2 rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
+                                                    {definitionDetail.template.preview.bodyText}
+                                                </div>
+                                            ) : null}
 
-                                    <div className="space-y-3">
-                                        {paramPositions.map((i) => {
-                                            const d = paramDrafts[i] || { mode: "static", staticValue: "", dynamicField: "" };
-                                            return (
-                                                <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-md border p-3">
-                                                    <div className="text-xs font-medium text-gray-700">{`{{${i}}}`}</div>
+                                            {mappingList.length > 0 ? (
+                                                <div className="border-t pt-3 space-y-2">
+                                                    <div className="text-sm font-medium">Template Variables</div>
+                                                    <div className="space-y-3">
+                                                        {mappingList.map((m) => {
+                                                            const label = m.sourceType === "user_input" ? (m.label || `{{${m.position}}}`) : `{{${m.position}}}`;
+                                                            const isUserInput = (m.sourceType || "").toLowerCase() === "user_input";
+                                                            const isRequired = m.required !== false;
+                                                            const displayValue = isUserInput
+                                                                ? String(userInputValues?.[m.position] ?? "")
+                                                                : m.sourceType === "customer" || m.sourceType === "transaction"
+                                                                    ? String(m.fieldPath || "")
+                                                                    : "";
 
-                                                    <div className="space-y-1">
-                                                        <Label className="text-xs">Mode</Label>
-                                                        <Select
-                                                            value={d.mode}
-                                                            onValueChange={(v) => {
-                                                                setParamDrafts((prev) => ({
-                                                                    ...prev,
-                                                                    [i]: {
-                                                                        ...prev[i],
-                                                                        mode: v as ParamMode,
-                                                                    },
-                                                                }));
-                                                            }}
-                                                        >
-                                                            <SelectTrigger>
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="static">Static</SelectItem>
-                                                                <SelectItem value="dynamic">Dynamic</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </div>
-
-                                                    <div className="space-y-1">
-                                                        {d.mode === "dynamic" ? (
-                                                            <>
-                                                                <Label className="text-xs">Field</Label>
-                                                                <Input
-                                                                    value={d.dynamicField}
-                                                                    onChange={(e) => {
-                                                                        const value = e.target.value;
-                                                                        setParamDrafts((prev) => ({
-                                                                            ...prev,
-                                                                            [i]: {
-                                                                                ...prev[i],
-                                                                                dynamicField: value,
-                                                                            },
-                                                                        }));
-                                                                    }}
-                                                                    placeholder="customer.name"
-                                                                />
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Label className="text-xs">Value</Label>
-                                                                <Input
-                                                                    value={d.staticValue}
-                                                                    onChange={(e) => {
-                                                                        const value = e.target.value;
-                                                                        setParamDrafts((prev) => ({
-                                                                            ...prev,
-                                                                            [i]: {
-                                                                                ...prev[i],
-                                                                                staticValue: value,
-                                                                            },
-                                                                        }));
-                                                                    }}
-                                                                    placeholder="Sample value"
-                                                                />
-                                                            </>
-                                                        )}
+                                                            return (
+                                                                <div key={m.position} className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-md border p-3">
+                                                                    <div className="text-xs font-medium text-gray-700">{`{{${m.position}}}`}</div>
+                                                                    <div className="text-xs text-muted-foreground capitalize">{m.sourceType?.replace("_", " ")}</div>
+                                                                    <div className="space-y-1">
+                                                                        {isUserInput ? (
+                                                                            <>
+                                                                                <Label className="text-xs">
+                                                                                    {label}
+                                                                                    {isRequired ? " *" : ""}
+                                                                                </Label>
+                                                                                <Input
+                                                                                    value={displayValue}
+                                                                                    onChange={(e) => {
+                                                                                        const next = e.target.value;
+                                                                                        setUserInputValues((prev) => ({
+                                                                                            ...prev,
+                                                                                            [m.position]: next,
+                                                                                        }));
+                                                                                    }}
+                                                                                    placeholder="Enter value"
+                                                                                />
+                                                                            </>
+                                                                        ) : (
+                                                                            <div className="text-xs text-gray-700 break-all">{displayValue || "—"}</div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                            ) : null}
+                                        </>
+                                    ) : null}
                                 </div>
                             ) : null}
                         </TabsContent>
@@ -692,8 +813,8 @@ export default function CampaignsClient() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All</SelectItem>
-                                        <SelectItem value="segment">Segment (filters)</SelectItem>
+                                        <SelectItem value="all">All (filters)</SelectItem>
+                                        <SelectItem value="segment">Segment</SelectItem>
                                         <SelectItem value="custom">Custom phone numbers</SelectItem>
                                     </SelectContent>
                                 </Select>
@@ -714,6 +835,53 @@ export default function CampaignsClient() {
                             ) : null}
 
                             {createAudienceType === "segment" ? (
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <Label>Segment *</Label>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => loadSegments()}
+                                            disabled={segmentsLoading}
+                                            className="gap-2"
+                                        >
+                                            {segmentsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                                            Refresh
+                                        </Button>
+                                    </div>
+                                    <Select value={createSegmentId} onValueChange={setCreateSegmentId} disabled={segmentsLoading}>
+                                        <SelectTrigger>
+                                            <SelectValue
+                                                placeholder={
+                                                    segmentsLoading
+                                                        ? "Loading segments…"
+                                                        : segments.length === 0
+                                                            ? "No segments"
+                                                            : "Select a segment"
+                                                }
+                                            />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {segments.map((s) => (
+                                                <SelectItem key={s.id} value={s.id}>
+                                                    {s.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {segmentsError ? (
+                                        <div className="text-xs text-destructive" role="alert">
+                                            {segmentsError}
+                                        </div>
+                                    ) : null}
+                                    <div className="text-xs text-muted-foreground">
+                                        Segment computation happens on-demand when you create the campaign.
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {createAudienceType === "all" ? (
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div className="space-y-2">

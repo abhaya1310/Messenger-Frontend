@@ -18,6 +18,7 @@ import { MessagePreview } from "@/components/message-preview";
 import type {
     CampaignDefinition,
     CampaignDefinitionStatus,
+    CampaignDefinitionTemplateVariableMapping,
     CreateCampaignDefinitionRequest,
     UpdateCampaignDefinitionRequest,
     WhatsAppTemplateCategory,
@@ -102,15 +103,78 @@ function safeJsonStringify(value: unknown) {
 
 function extractTemplateVariableMappings(definition: CampaignDefinition): TemplateVariableMappings {
     const d: any = definition as any;
-    return (
+    const raw =
         d?.templateVariableMappings ||
         d?.template_variable_mappings ||
         d?.template?.templateVariableMappings ||
         d?.template?.template_variable_mappings ||
         d?.template?.preview?.templateVariableMappings ||
         d?.template?.preview?.template_variable_mappings ||
-        {}
-    );
+        {};
+
+    if (Array.isArray(raw)) {
+        const out: TemplateVariableMappings = {};
+        for (const m of raw as CampaignDefinitionTemplateVariableMapping[]) {
+            const key = String(m.position);
+            const st = String(m.sourceType || "").toLowerCase();
+            const fieldPath = String(m.fieldPath || "");
+
+            if (st === "customer") {
+                const path = fieldPath.startsWith("customer.") ? fieldPath.slice("customer.".length) : fieldPath;
+                out[key] = { source: "customer", path };
+                continue;
+            }
+            if (st === "transaction") {
+                const path = fieldPath.startsWith("transaction.") ? fieldPath.slice("transaction.".length) : fieldPath;
+                out[key] = { source: "transaction", path };
+                continue;
+            }
+            if (st === "user_input") {
+                out[key] = { source: "static", label: m.label };
+                continue;
+            }
+        }
+        return out;
+    }
+
+    return (raw || {}) as TemplateVariableMappings;
+}
+
+function toBackendTemplateVariableMappings(params: {
+    templateVariables: Array<{ index: number }>;
+    mappings: TemplateVariableMappings;
+}): CampaignDefinitionTemplateVariableMapping[] {
+    const out: CampaignDefinitionTemplateVariableMapping[] = [];
+    for (const v of params.templateVariables) {
+        const key = String(v.index);
+        const mapping = params.mappings?.[key];
+        if (!mapping) continue;
+
+        if (mapping.source === "customer") {
+            out.push({
+                position: v.index,
+                sourceType: "customer",
+                fieldPath: `customer.${mapping.path}`,
+            });
+            continue;
+        }
+
+        if (mapping.source === "transaction") {
+            out.push({
+                position: v.index,
+                sourceType: "transaction",
+                fieldPath: `transaction.${mapping.path}`,
+            });
+            continue;
+        }
+
+        out.push({
+            position: v.index,
+            sourceType: "user_input",
+            label: (mapping as any)?.label,
+        });
+    }
+    return out;
 }
 
 export default function AdminCampaignDefinitionsClient() {
@@ -441,21 +505,27 @@ export default function AdminCampaignDefinitionsClient() {
                 },
             };
 
-            const body: CreateCampaignDefinitionRequest | UpdateCampaignDefinitionRequest =
+            const payload =
                 upsertMode === "create"
                     ? ({
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
                         template: templatePayload,
-                        templateVariableMappings: form.templateVariableMappings,
+                        templateVariableMappings: toBackendTemplateVariableMappings({
+                            templateVariables: form.variables.map((v) => ({ index: v.index })),
+                            mappings: form.templateVariableMappings,
+                        }),
                     } satisfies CreateCampaignDefinitionRequest)
                     : ({
                         key: form.key.trim(),
                         name: form.name.trim(),
                         description: form.description.trim() || undefined,
                         template: templatePayload,
-                        templateVariableMappings: form.templateVariableMappings,
+                        templateVariableMappings: toBackendTemplateVariableMappings({
+                            templateVariables: form.variables.map((v) => ({ index: v.index })),
+                            mappings: form.templateVariableMappings,
+                        }),
                     } satisfies UpdateCampaignDefinitionRequest);
 
             const token = getAuthToken();
@@ -469,7 +539,7 @@ export default function AdminCampaignDefinitionsClient() {
                 {
                     method: upsertMode === "create" ? "POST" : "PATCH",
                     headers,
-                    body: JSON.stringify(body),
+                    body: JSON.stringify(payload),
                 }
             );
 

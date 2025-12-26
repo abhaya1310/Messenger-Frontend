@@ -221,6 +221,21 @@ export function TemplateVariableMapper(props: Props) {
                                             <div className="text-xs text-muted-foreground">
                                                 The end-user will enter this value. Use dummy/sample values elsewhere for preview.
                                             </div>
+                                            <div className="pt-2 space-y-1">
+                                                <Label className="text-xs">Input label</Label>
+                                                <Input
+                                                    value={(mapping as any)?.label || ""}
+                                                    onChange={(e) => {
+                                                        const label = e.target.value;
+                                                        const next = {
+                                                            ...(props.value || {}),
+                                                            [key]: { source: "static", label },
+                                                        } satisfies TemplateVariableMappings;
+                                                        props.onChange(next);
+                                                    }}
+                                                    placeholder="e.g. Coupon Code"
+                                                />
+                                            </div>
                                         </div>
                                     ) : null}
                                 </div>

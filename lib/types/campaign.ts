@@ -24,6 +24,7 @@ export interface CampaignAudience {
     hasBirthday?: boolean;
   };
   customPhoneNumbers?: string[];
+  segmentId?: string;
   estimatedCount?: number;
 }
 
@@ -70,13 +71,10 @@ export interface CampaignListResponse {
 export interface CreateCampaignRequest {
   name: string;
   description?: string;
+  type?: 'event' | 'promotional' | 'announcement';
   scheduledAt: string;
-  template: {
-    name: string;
-    language: string;
-    parameters?: string[];
-    dynamicParameters?: Array<{ position: number; field: string }>;
-  };
+  campaignDefinitionId: string;
+  userInputParameters?: Record<string, string>;
   audience: {
     type: 'all' | 'segment' | 'custom';
     filters?: {
@@ -88,6 +86,7 @@ export interface CreateCampaignRequest {
       hasBirthday?: boolean;
     };
     customPhoneNumbers?: string[];
+    segmentId?: string;
   };
 }
 

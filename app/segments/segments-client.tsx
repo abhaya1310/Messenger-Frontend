@@ -238,7 +238,8 @@ export default function SegmentsClient() {
             else next.unshift(seg);
             return next;
         });
-        if (id) startPolling(id);
+        const status = String(seg.status || "").toLowerCase();
+        if (id && status === "computing") startPolling(id);
     };
 
     const onRecompute = async (s: Segment) => {
@@ -250,7 +251,7 @@ export default function SegmentsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
-            const res = await fetch(`/api/segments/${id}/recompute?processNow=true`, {
+            const res = await fetch(`/api/segments/${id}/compute?processNow=true`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -313,7 +314,7 @@ export default function SegmentsClient() {
                     <div>
                         <h1 className="text-2xl font-semibold">Customer Segmentation</h1>
                         <p className="text-sm text-muted-foreground">
-                            Create segments to target campaigns. New segments often start in “Computing” until cron processes them.
+                            Create segments to target campaigns. Segments save rules only; audience computation runs on-demand.
                         </p>
                     </div>
                     <div className="flex gap-2">

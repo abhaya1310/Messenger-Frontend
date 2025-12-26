@@ -20,6 +20,15 @@ export interface CampaignDefinitionTemplate {
     preview?: CampaignDefinitionTemplatePreview;
 }
 
+export type CampaignDefinitionTemplateVariableMapping = {
+    position: number;
+    sourceType: "customer" | "transaction" | "user_input";
+    fieldPath?: string;
+    label?: string;
+    required?: boolean;
+    validation?: unknown;
+};
+
 export interface CampaignDefinition {
     _id: string;
     key: string;
@@ -27,7 +36,7 @@ export interface CampaignDefinition {
     description?: string;
     status: CampaignDefinitionStatus;
     template: CampaignDefinitionTemplate;
-    templateVariableMappings?: TemplateVariableMappings;
+    templateVariableMappings?: TemplateVariableMappings | CampaignDefinitionTemplateVariableMapping[];
     publishedAt?: string;
     createdAt: string;
     updatedAt: string;
@@ -53,7 +62,7 @@ export interface CreateCampaignDefinitionRequest {
         category: WhatsAppTemplateCategory;
         componentsPreset: unknown[];
     };
-    templateVariableMappings?: TemplateVariableMappings;
+    templateVariableMappings?: TemplateVariableMappings | CampaignDefinitionTemplateVariableMapping[];
 }
 
 export interface UpdateCampaignDefinitionRequest {
@@ -66,5 +75,5 @@ export interface UpdateCampaignDefinitionRequest {
         category?: WhatsAppTemplateCategory;
         componentsPreset?: unknown[];
     };
-    templateVariableMappings?: TemplateVariableMappings;
+    templateVariableMappings?: TemplateVariableMappings | CampaignDefinitionTemplateVariableMapping[];
 }
