@@ -262,6 +262,12 @@ export function getCurrentOrgId(): string | null {
       const org = JSON.parse(orgData);
       return org.orgId;
     }
+    const authData = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (authData) {
+      const auth = JSON.parse(authData);
+      const orgId = auth?.user?.orgId;
+      if (typeof orgId === 'string' && orgId.trim()) return orgId.trim();
+    }
   } catch {
     // Ignore parse errors
   }

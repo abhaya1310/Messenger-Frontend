@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { getAuthToken, getCurrentOrgId } from "@/lib/auth";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 
@@ -105,6 +106,7 @@ type ParamDraft = {
 
 export default function CampaignsClient() {
     const router = useRouter();
+    const { orgId: authOrgId } = useAuth();
 
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
@@ -209,7 +211,7 @@ export default function CampaignsClient() {
                 return;
             }
 
-            const orgId = getCurrentOrgId();
+            const orgId = getCurrentOrgId() || authOrgId;
             const headers: Record<string, string> = {
                 Authorization: `Bearer ${token}`,
             };
@@ -296,7 +298,7 @@ export default function CampaignsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
-            const orgId = getCurrentOrgId();
+            const orgId = getCurrentOrgId() || authOrgId;
             const headers: Record<string, string> = {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`,
