@@ -1,7 +1,7 @@
 "use client";
 
-import CampaignRunsClient from "./runs-client";
+import CampaignsClient from "./campaigns-client";
 
 export default function CampaignsPage() {
-  return <CampaignRunsClient />;
+  return <CampaignsClient />;
 }

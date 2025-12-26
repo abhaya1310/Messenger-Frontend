@@ -231,6 +231,13 @@ export async function analyzeCsv(file: File, templateName?: string): Promise<Csv
   return res.json();
 }
 
+function unwrapApiResponse<T>(value: any): T {
+  if (value && typeof value === 'object' && 'data' in value) {
+    return (value as any).data as T;
+  }
+  return value as T;
+}
+
 export async function fetchAnalytics(params?: Record<string, string>): Promise<AnalyticsData> {
   if (typeof window === 'undefined') {
     throw new Error('fetchAnalytics can only be called from the client side');
@@ -679,7 +686,7 @@ export async function apiClient<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  if (!token && orgId) {
+  if (orgId) {
     headers['X-ORG-ID'] = orgId;
   }
 
@@ -764,34 +771,53 @@ export async function fetchCampaigns(params: CampaignListParams = {}): Promise<C
   if (params.limit) searchParams.set('limit', params.limit.toString());
 
   const queryString = searchParams.toString();
-  return apiClient<CampaignListResponse>(`/api/campaigns${queryString ? `?${queryString}` : ''}`);
+  const raw = await apiClient<any>(`/api/campaigns${queryString ? `?${queryString}` : ''}`);
+  const data = unwrapApiResponse<any>(raw);
+
+  if (data && typeof data === 'object' && Array.isArray((data as any).campaigns)) {
+    return {
+      campaigns: (data as any).campaigns as Campaign[],
+      pagination: (data as any).pagination,
+    };
+  }
+
+  if (Array.isArray(data)) {
+    return { campaigns: data as Campaign[] };
+  }
+
+  return { campaigns: [] };
 }
 
 /**
  * Fetch single campaign by ID
  */
 export async function fetchCampaign(campaignId: string): Promise<Campaign> {
-  return apiClient<Campaign>(`/api/campaigns/${campaignId}`);
+  const raw = await apiClient<any>(`/api/campaigns/${campaignId}`);
+  return unwrapApiResponse<Campaign>(raw);
 }
 
 /**
  * Create a new campaign
  */
 export async function createCampaign(data: CreateCampaignRequest): Promise<Campaign> {
-  return apiClient<Campaign>('/api/campaigns', {
+  const raw = await apiClient<any>('/api/campaigns', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+
+  return unwrapApiResponse<Campaign>(raw);
 }
 
 /**
  * Update a campaign
  */
 export async function updateCampaign(campaignId: string, data: Partial<CreateCampaignRequest>): Promise<Campaign> {
-  return apiClient<Campaign>(`/api/campaigns/${campaignId}`, {
+  const raw = await apiClient<any>(`/api/campaigns/${campaignId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
+
+  return unwrapApiResponse<Campaign>(raw);
 }
 
 /**

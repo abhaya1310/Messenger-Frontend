@@ -28,12 +28,12 @@ export interface CampaignAudience {
 }
 
 export interface CampaignMetrics {
-  targetCount: number;
-  sentCount: number;
-  deliveredCount: number;
-  readCount: number;
-  failedCount: number;
-  respondedCount: number;
+  targetCount?: number;
+  sentCount?: number;
+  deliveredCount?: number;
+  readCount?: number;
+  failedCount?: number;
+  respondedCount?: number;
 }
 
 export interface Campaign {
@@ -41,8 +41,8 @@ export interface Campaign {
   orgId: string;
   name: string;
   description?: string;
-  type: 'event' | 'promotional' | 'announcement';
-  status: 'draft' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled';
+  type?: 'event' | 'promotional' | 'announcement';
+  status: 'draft' | 'preparing' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
   scheduledAt: string;
   executedAt?: string;
   completedAt?: string;
@@ -56,7 +56,7 @@ export interface Campaign {
 
 // API Request Types for One-Time Campaigns
 export interface CampaignListParams {
-  status?: 'draft' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled';
+  status?: 'draft' | 'preparing' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
   type?: 'event' | 'promotional' | 'announcement';
   page?: number;
   limit?: number;
@@ -64,13 +64,12 @@ export interface CampaignListParams {
 
 export interface CampaignListResponse {
   campaigns: Campaign[];
-  pagination: { total: number; page: number; limit: number };
+  pagination?: { total: number; page: number; limit: number };
 }
 
 export interface CreateCampaignRequest {
   name: string;
   description?: string;
-  type: 'event' | 'promotional' | 'announcement';
   scheduledAt: string;
   template: {
     name: string;
@@ -85,6 +84,8 @@ export interface CreateCampaignRequest {
       maxDaysSinceLastVisit?: number;
       minTotalSpend?: number;
       outlets?: string[];
+      hasEmail?: boolean;
+      hasBirthday?: boolean;
     };
     customPhoneNumbers?: string[];
   };
