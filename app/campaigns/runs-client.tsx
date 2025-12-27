@@ -24,6 +24,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { getAuthToken } from "@/lib/auth";
+import { useAuth } from "@/components/auth-provider";
 import type {
     CampaignRun,
     CampaignRunStatus,
@@ -120,6 +121,7 @@ async function fetchCreditsPrecheckOrThrow(runId: string, token: string) {
 }
 
 export default function CampaignRunsClient() {
+    const { orgId } = useAuth();
     const [runs, setRuns] = useState<CampaignRun[]>([]);
     const [definitions, setDefinitions] = useState<CampaignDefinitionSummary[]>([]);
     const [posEnabled, setPosEnabled] = useState(false);
@@ -227,7 +229,10 @@ export default function CampaignRunsClient() {
                 return;
             }
 
-            const headers = { Authorization: `Bearer ${token}` };
+            const headers: Record<string, string> = {
+                Authorization: `Bearer ${token}`,
+                ...(orgId ? { "X-ORG-ID": orgId } : {}),
+            };
 
             const [capRes, defsRes, runsRes] = await Promise.all([
                 fetch("/api/campaign-runs/capabilities", { headers }),
