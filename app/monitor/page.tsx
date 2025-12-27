@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { 
-  fetchConversations, 
-  fetchConversationMessages, 
-  updateConversationMetadata, 
-  sendTextMessage 
+import {
+  fetchConversations,
+  fetchConversationMessages,
+  updateConversationMetadata,
+  sendTextMessage
 } from "@/lib/api";
-import { 
-  Conversation, 
-  Message, 
+import {
+  Conversation,
+  Message,
   ConversationFilters,
   ConversationListItem,
   MessageBubble,
@@ -25,13 +25,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { 
-  MessageSquare, 
-  Users, 
-  Filter, 
-  Settings, 
-  RefreshCw, 
-  Menu, 
+import {
+  MessageSquare,
+  Users,
+  Filter,
+  Settings,
+  RefreshCw,
+  Menu,
   X,
   Phone,
   Flag,
@@ -59,7 +59,8 @@ export default function MonitorPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<number | null>(null);
+  const messagesLengthRef = useRef(0);
 
   // Check if mobile
   useEffect(() => {
@@ -70,6 +71,10 @@ export default function MonitorPage() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  useEffect(() => {
+    messagesLengthRef.current = messages.length;
+  }, [messages.length]);
 
   // Helper function to deduplicate conversations by _id
   const deduplicateConversations = useCallback((conversations: ConversationListItem[]): ConversationListItem[] => {
@@ -87,9 +92,9 @@ export default function MonitorPage() {
   // Load conversations
   const loadConversations = useCallback(async (reset = false) => {
     if (loading.conversations) return;
-    
+
     setLoading(prev => ({ ...prev, conversations: true }));
-    
+
     try {
       const skip = reset ? 0 : pagination.conversations.skip;
       const response = await fetchConversations({
@@ -129,9 +134,9 @@ export default function MonitorPage() {
   // Load messages for selected conversation
   const loadMessages = useCallback(async (conversationId: string, reset = false) => {
     if (loading.messages) return;
-    
+
     setLoading(prev => ({ ...prev, messages: true }));
-    
+
     try {
       const conversation = conversations.find(c => c._id === conversationId);
       if (!conversation) return;
@@ -166,12 +171,12 @@ export default function MonitorPage() {
   // Send message
   const handleSendMessage = async (text: string) => {
     if (!selectedConversation) return;
-    
+
     setLoading(prev => ({ ...prev, sending: true }));
-    
+
     try {
       const response = await sendTextMessage(selectedConversation.clientPhoneNumber, text);
-      
+
       // Add optimistic message to UI
       const optimisticMessage: MessageBubble = {
         _id: `temp-${Date.now()}`,
@@ -183,13 +188,13 @@ export default function MonitorPage() {
         timestamp: new Date().toISOString(),
         metadata: {}
       };
-      
+
       setMessages(prev => [...prev, optimisticMessage]);
-      
+
       // Update message status when we get the real message ID
       if (response.messageId) {
-        setMessages(prev => prev.map(msg => 
-          msg._id === optimisticMessage._id 
+        setMessages(prev => prev.map(msg =>
+          msg._id === optimisticMessage._id
             ? { ...msg, _id: response.messageId, status: 'sent' }
             : msg
         ));
@@ -206,21 +211,21 @@ export default function MonitorPage() {
   // Update conversation metadata
   const handleUpdateMetadata = async (metadata: Partial<ConversationMetadata>) => {
     if (!selectedConversation) return;
-    
+
     setLoading(prev => ({ ...prev, updating: true }));
-    
+
     try {
       await updateConversationMetadata(selectedConversation.clientPhoneNumber, metadata);
-      
+
       // Update local state
       setSelectedConversation(prev => prev ? {
         ...prev,
         metadata: { ...prev.metadata, ...metadata }
       } : null);
-      
+
       setConversations(prev => {
-        const updated = prev.map(conv => 
-          conv._id === selectedConversation._id 
+        const updated = prev.map(conv =>
+          conv._id === selectedConversation._id
             ? { ...conv, metadata: { ...conv.metadata, ...metadata } }
             : conv
         );
@@ -276,15 +281,20 @@ export default function MonitorPage() {
   useEffect(() => {
     if (!selectedConversation) return;
 
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
     const pollMessages = async () => {
       try {
         const response = await fetchConversationMessages(selectedConversation.clientPhoneNumber, {
           limit: 50,
           skip: 0
         });
-        
+
         // Check if we have new messages
-        if (response.messages.length > messages.length) {
+        if (response.messages.length > messagesLengthRef.current) {
           setMessages(response.messages);
         }
       } catch (error) {
@@ -292,27 +302,21 @@ export default function MonitorPage() {
       }
     };
 
-    const interval = setInterval(pollMessages, 10000); // Poll every 10 seconds
-    setPollingInterval(interval);
+    const interval = window.setInterval(pollMessages, 10000); // Poll every 10 seconds
+    pollingIntervalRef.current = interval;
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     };
-  }, [selectedConversation, messages.length]);
+  }, [selectedConversation]);
 
   // Load conversations on mount and when filters change
   useEffect(() => {
     loadConversations(true);
   }, [filters]);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
-    };
-  }, [pollingInterval]);
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
@@ -328,7 +332,7 @@ export default function MonitorPage() {
               {conversations.length} conversations
             </Badge>
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
@@ -338,7 +342,7 @@ export default function MonitorPage() {
             >
               <Filter className="h-4 w-4" />
             </Button>
-            
+
             <Button
               variant="ghost"
               size="sm"
@@ -348,7 +352,7 @@ export default function MonitorPage() {
             >
               <RefreshCw className={cn("h-4 w-4", loading.conversations && "animate-spin")} />
             </Button>
-            
+
             {isMobile && (
               <Button
                 variant="ghost"
@@ -406,7 +410,7 @@ export default function MonitorPage() {
                       loading={loading.messages}
                     />
                   </div>
-                  
+
                   <div className="border-t border-gray-200 p-4">
                     <ReplyInput
                       onSend={handleSendMessage}
@@ -523,7 +527,7 @@ export default function MonitorPage() {
                     <Settings className="h-4 w-4" />
                   </Button>
                 </div>
-                
+
                 <div className="flex-1 overflow-hidden">
                   <MessageThread
                     messages={messages}
@@ -533,7 +537,7 @@ export default function MonitorPage() {
                     loading={loading.messages}
                   />
                 </div>
-                
+
                 <div className="border-t border-gray-200 p-4">
                   <ReplyInput
                     onSend={handleSendMessage}

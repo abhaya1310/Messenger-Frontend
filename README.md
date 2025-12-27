@@ -160,6 +160,11 @@ This repo also contains **Next.js route handlers** under `app/api/*` that proxy 
 
 They forward admin/user auth headers as needed.
 
+Org scoping notes:
+
+- Most end-user flows use a user JWT (`Authorization: Bearer <token>`).
+- Some endpoints additionally require `X-ORG-ID: <orgId>` for correct tenant resolution.
+
 ### Campaign Catalog (Definitions) + Runs
 
 The campaign catalog is built from **campaign definitions** created in the admin portal.
@@ -185,6 +190,12 @@ The campaign catalog is built from **campaign definitions** created in the admin
   - `GET /api/campaign-runs/definitions` returns user-visible definitions.
   - `POST /api/campaign-runs` creates a run (optionally including `templateParams` overrides).
 
+Campaign Runs capabilities:
+
+- `GET /api/campaign-runs/capabilities` returns feature flags for the current org.
+- The frontend sends `Authorization: Bearer <token>` and `X-ORG-ID: <orgId>`.
+- The Next.js proxy route forwards both headers to the backend.
+
 ### Feedback Templates (Definitions)
 
 The feedback feature is implemented as reusable **feedback definitions** created in the admin portal and selected by end users.
@@ -198,6 +209,11 @@ The feedback feature is implemented as reusable **feedback definitions** created
 
 - User definition picker (proxy route):
   - `GET /api/feedback-definitions` (returns published feedback definitions for user selection)
+
+Org Settings:
+
+- `GET /api/org-settings/:orgId` returns org settings (used by `/settings` and some org context reads).
+- Requests should include `Authorization: Bearer <token>` and `X-ORG-ID: <orgId>`.
 
 Important:
 

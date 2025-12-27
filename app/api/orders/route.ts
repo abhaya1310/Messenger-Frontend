@@ -4,6 +4,8 @@ function getBackendBaseUrl(): string {
     return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
 }
 
+let cachedOrdersPath: string | null = null;
+
 function getUserAuthHeaders(request: NextRequest): Record<string, string> | null {
     const authorization = request.headers.get('authorization');
     if (!authorization) return null;
@@ -36,28 +38,51 @@ function buildBackendUrl(pathname: string, request: NextRequest) {
     return backendUrl;
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 export async function GET(request: NextRequest) {
     const authHeaders = getUserAuthHeaders(request);
     if (!authHeaders) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const candidatePaths = ['/api/orders', '/api/v1/orders'];
+    const candidatePaths = cachedOrdersPath ? [cachedOrdersPath, '/api/orders', '/api/v1/orders'] : ['/api/orders', '/api/v1/orders'];
+    const uniqCandidatePaths = Array.from(new Set(candidatePaths));
 
-    for (const pathname of candidatePaths) {
+    for (const pathname of uniqCandidatePaths) {
         const backendUrl = buildBackendUrl(pathname, request);
-        const res = await fetch(backendUrl.toString(), {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                ...authHeaders,
-            },
-        });
+        let res: Response;
+        try {
+            res = await fetchWithTimeout(
+                backendUrl.toString(),
+                {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...authHeaders,
+                    },
+                },
+                15000
+            );
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Failed to reach backend';
+            return NextResponse.json({ error: msg }, { status: 504 });
+        }
 
         if (res.status === 404 || res.status === 405) {
+            if (cachedOrdersPath === pathname) cachedOrdersPath = null;
             continue;
         }
 
+        cachedOrdersPath = pathname;
         const data = await parseBackendResponse(res);
         return NextResponse.json(data, { status: res.status });
     }

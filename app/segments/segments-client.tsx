@@ -65,7 +65,9 @@ export default function SegmentsClient() {
     const [editing, setEditing] = useState<Segment | null>(null);
 
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-    const pollingRef = useRef<Map<string, number>>(new Map());
+    const pollingIntervalRef = useRef<number | null>(null);
+    const pollingTargetsRef = useRef<Set<string>>(new Set());
+    const pollingInFlightRef = useRef(false);
 
     const [ordersStatus, setOrdersStatus] = useState<
         | null
@@ -88,12 +90,13 @@ export default function SegmentsClient() {
         return { ready, computing };
     }, [segments]);
 
-    const stopPolling = (id: string) => {
-        const existing = pollingRef.current.get(id);
-        if (existing) {
-            window.clearInterval(existing);
-            pollingRef.current.delete(id);
+    const stopPolling = () => {
+        if (pollingIntervalRef.current) {
+            window.clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
         }
+        pollingTargetsRef.current.clear();
+        pollingInFlightRef.current = false;
     };
 
     const checkOrdersExist = async () => {
@@ -123,45 +126,68 @@ export default function SegmentsClient() {
         }
     };
 
-    const startPolling = (id: string) => {
-        if (!id) return;
-        stopPolling(id);
+    const ensurePolling = () => {
+        if (pollingIntervalRef.current) return;
 
-        const intervalId = window.setInterval(async () => {
+        pollingIntervalRef.current = window.setInterval(async () => {
+            if (pollingInFlightRef.current) return;
+            pollingInFlightRef.current = true;
+
             try {
                 const token = getAuthToken();
-                if (!token) return;
+                if (!token) {
+                    stopPolling();
+                    return;
+                }
 
-                const res = await fetch(`/api/segments/${id}`, {
-                    method: "GET",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
+                const ids = Array.from(pollingTargetsRef.current);
+                if (ids.length === 0) {
+                    stopPolling();
+                    return;
+                }
 
-                const json = await safeJson(res);
-                if (!res.ok) return;
+                await Promise.all(
+                    ids.slice(0, 8).map(async (id) => {
+                        try {
+                            const res = await fetch(`/api/segments/${id}`, {
+                                method: "GET",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                },
+                            });
 
-                const parsed = json as SegmentResponse;
-                const seg = (parsed?.data || json?.data) as Segment | undefined;
-                if (!seg) return;
+                            const json = await safeJson(res);
+                            if (!res.ok) return;
 
-                setSegments((prev) => {
-                    const next = [...prev];
-                    const idx = next.findIndex((s) => segmentId(s) === id);
-                    if (idx >= 0) next[idx] = { ...next[idx], ...seg };
-                    else next.unshift(seg);
-                    return next;
-                });
+                            const parsed = json as SegmentResponse;
+                            const seg = (parsed?.data || json?.data) as Segment | undefined;
+                            if (!seg) return;
 
-                const status = (seg.status || "").toLowerCase();
-                if (status === "ready" || status === "failed") stopPolling(id);
-            } catch {
-                return;
+                            setSegments((prev) => {
+                                const next = [...prev];
+                                const idx = next.findIndex((s) => segmentId(s) === id);
+                                if (idx >= 0) next[idx] = { ...next[idx], ...seg };
+                                else next.unshift(seg);
+                                return next;
+                            });
+
+                            const status = (seg.status || "").toLowerCase();
+                            if (status === "ready" || status === "failed") {
+                                pollingTargetsRef.current.delete(id);
+                            }
+                        } catch {
+                            return;
+                        }
+                    })
+                );
+
+                if (pollingTargetsRef.current.size === 0) {
+                    stopPolling();
+                }
+            } finally {
+                pollingInFlightRef.current = false;
             }
-        }, 3000);
-
-        pollingRef.current.set(id, intervalId);
+        }, 5000);
     };
 
     const loadSegments = async () => {
@@ -201,21 +227,23 @@ export default function SegmentsClient() {
         loadSegments();
 
         return () => {
-            for (const [, intervalId] of pollingRef.current) {
-                window.clearInterval(intervalId);
-            }
-            pollingRef.current.clear();
+            stopPolling();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
+        const nextTargets = new Set<string>();
         for (const s of segments) {
             const id = segmentId(s);
             if (!id) continue;
             const st = (s.status || "").toLowerCase();
-            if (st === "computing") startPolling(id);
+            if (st === "computing") nextTargets.add(id);
         }
+
+        pollingTargetsRef.current = nextTargets;
+        if (nextTargets.size > 0) ensurePolling();
+        else stopPolling();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [segments.map((s) => `${segmentId(s)}:${s.status}:${s.estimatedSize ?? ""}`).join("|")]);
 
@@ -239,7 +267,10 @@ export default function SegmentsClient() {
             return next;
         });
         const status = String(seg.status || "").toLowerCase();
-        if (id && status === "computing") startPolling(id);
+        if (id && status === "computing") {
+            pollingTargetsRef.current.add(id);
+            ensurePolling();
+        }
     };
 
     const onRecompute = async (s: Segment) => {
@@ -270,7 +301,8 @@ export default function SegmentsClient() {
                 return next;
             });
 
-            startPolling(id);
+            pollingTargetsRef.current.add(id);
+            ensurePolling();
         } finally {
             setActionLoadingId(null);
         }
@@ -300,7 +332,7 @@ export default function SegmentsClient() {
                 throw new Error(json?.error || json?.message || "Failed to delete.");
             }
 
-            stopPolling(id);
+            pollingTargetsRef.current.delete(id);
             setSegments((prev) => prev.filter((x) => segmentId(x) !== id));
         } finally {
             setActionLoadingId(null);

@@ -126,8 +126,9 @@ There are two major auth mechanisms used across endpoints:
 
 Tenant scoping:
 
-- For end-user UI requests, the backend should infer `orgId` from the JWT.
-- `X-ORG-ID` is treated as legacy/fallback and is only sent when there is no JWT.
+- For most end-user UI requests, the backend can infer `orgId` from the JWT.
+- Some endpoints additionally require `X-ORG-ID: <orgId>` for correct tenant resolution (even when a JWT is present).
+- Campaign Runs capabilities (`GET /api/campaign-runs/capabilities`) is treated as org-aware and should be called with both `Authorization: Bearer <token>` and `X-ORG-ID: <orgId>`.
 - **Temporary backend constraint**: for admin proxy calls under `/api/admin/**`, the frontend currently always forwards `X-ORG-ID` (even when the admin JWT is present), because many admin endpoints still select tenant via the header.
 
 ### Admin Portal Auth (role-based)
@@ -197,6 +198,11 @@ This repo still contains route handlers that proxy backend requests and they are
 - `/api/campaign-runs/*` (campaign runs UI)
 - Multipart endpoints like `/api/media/upload` and `/api/campaign-runs/:id/audience/csv`
 
+Proxy header forwarding:
+
+- Campaign Runs proxy routes under `app/api/campaign-runs/*` forward `Authorization`.
+- For org-aware endpoints, proxies also forward `X-ORG-ID` when present.
+
 - Templates proxies use:
   - `BACKEND_URL || NEXT_PUBLIC_BACKEND_URL || http://localhost:3000`
   - `ADMIN_TOKEN` (server-side) for protected calls
@@ -236,6 +242,11 @@ Admin feedback definitions (global):
 User feedback definitions:
 
 - `app/api/feedback-definitions/route.ts` (published definitions for end-user selection)
+
+Org Settings:
+
+- `GET /api/org-settings/:orgId` is used to fetch org settings (e.g. `/settings`).
+- Calls should include `Authorization: Bearer <token>` and `X-ORG-ID: <orgId>` when required by backend policy.
 
 Important:
 
