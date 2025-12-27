@@ -100,6 +100,7 @@ export default function FeedbackPage() {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(orgId ? { "X-ORG-ID": orgId } : {}),
         },
       });
 
@@ -118,7 +119,12 @@ export default function FeedbackPage() {
         return;
       }
 
-      const enabled = Boolean((data as any)?.data?.posIntegrationEnabled);
+      const enabled = Boolean(
+        (data as any)?.data?.posIntegrationEnabled ??
+        (data as any)?.posIntegrationEnabled ??
+        (data as any)?.data?.pos_integration_enabled ??
+        (data as any)?.data?.posEnabled
+      );
       setPosIntegrationEnabled(enabled);
     } catch (e) {
       setPosIntegrationEnabled(null);

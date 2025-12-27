@@ -7,7 +7,11 @@ function getBackendBaseUrl(): string {
 function getUserAuthHeaders(request: NextRequest): Record<string, string> | null {
     const authorization = request.headers.get('authorization');
     if (!authorization) return null;
-    return { Authorization: authorization };
+    const orgId = request.headers.get('x-org-id');
+    return {
+        Authorization: authorization,
+        ...(orgId ? { 'X-ORG-ID': orgId } : {}),
+    };
 }
 
 async function parseBackendResponse(res: Response) {
