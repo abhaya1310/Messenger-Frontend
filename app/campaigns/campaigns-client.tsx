@@ -102,6 +102,8 @@ export default function CampaignsClient() {
     const router = useRouter();
     const { orgId: authOrgId } = useAuth();
 
+    const resolvedOrgId = useMemo(() => getCurrentOrgId() || authOrgId, [authOrgId]);
+
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -203,7 +205,11 @@ export default function CampaignsClient() {
                 return;
             }
 
-            const orgId = getCurrentOrgId() || authOrgId;
+            const orgId = resolvedOrgId;
+            if (!orgId) {
+                setCampaigns([]);
+                return;
+            }
             const headers: Record<string, string> = {
                 Authorization: `Bearer ${token}`,
             };
@@ -241,6 +247,12 @@ export default function CampaignsClient() {
         return () => stopPolling();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter]);
+
+    useEffect(() => {
+        if (!resolvedOrgId) return;
+        loadCampaigns({ silent: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [resolvedOrgId]);
 
     const openCreate = () => {
         setError(null);
