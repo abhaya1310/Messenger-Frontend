@@ -219,7 +219,7 @@ export default function CampaignsClient() {
             params.set("limit", "50");
             if (statusFilter !== "all") params.set("status", statusFilter);
 
-            const res = await fetch(`/api/campaigns?${params.toString()}`, {
+            const res = await fetch(`/api/campaign-runs?${params.toString()}`, {
                 method: "GET",
                 headers,
             });

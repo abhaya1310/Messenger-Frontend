@@ -29,8 +29,11 @@ export default function FeedbackPage() {
   const [config, setConfig] = useState<CampaignConfig | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingToggle, setSavingToggle] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  const [optimisticFeedbackEnabled, setOptimisticFeedbackEnabled] = useState<boolean | null>(null);
 
   const [feedbackDefinitions, setFeedbackDefinitions] = useState<FeedbackDefinitionListItem[]>([]);
   const [feedbackDefinitionsLoading, setFeedbackDefinitionsLoading] = useState(false);
@@ -162,6 +165,7 @@ export default function FeedbackPage() {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(orgId ? { "X-ORG-ID": orgId } : {}),
         },
       });
 
@@ -198,23 +202,33 @@ export default function FeedbackPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.timezone, orgSettings?.services?.posIntegration?.enabled, orgSettings?.timezone]);
 
-  const handleUtilityUpdate = async (updates: Partial<UtilityConfig>) => {
+  const handleUtilityUpdate = async (updates: Partial<UtilityConfig>, opts?: { background?: boolean }) => {
     if (!config) return;
-    setSaving(true);
-    setError(null);
-    setSavedMessage(null);
+    const background = !!opts?.background;
+    if (background) {
+      setSavingToggle(true);
+    } else {
+      setSaving(true);
+      setError(null);
+      setSavedMessage(null);
+    }
     try {
       const updated = await updateUtilityConfig(updates);
       setConfig({ ...config, utility: updated });
-      setSavedMessage("Saved");
+      if (!background) setSavedMessage("Saved");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
+      if (!background) setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
+      throw e;
     } finally {
-      setSaving(false);
+      if (background) {
+        setSavingToggle(false);
+      } else {
+        setSaving(false);
+      }
     }
   };
 
-  const feedbackEnabled = !!config?.utility?.feedback?.enabled;
+  const feedbackEnabled = optimisticFeedbackEnabled ?? !!config?.utility?.feedback?.enabled;
   const feedbackDelayMinutes = config?.utility?.feedback?.delayMinutes ?? 60;
   const feedbackDefinitionId = config?.utility?.feedback?.definitionId ?? "";
 
@@ -230,6 +244,7 @@ export default function FeedbackPage() {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(orgId ? { "X-ORG-ID": orgId } : {}),
         },
       });
 
@@ -316,12 +331,23 @@ export default function FeedbackPage() {
               </div>
               <Switch
                 checked={feedbackEnabled}
-                onCheckedChange={(checked) =>
-                  handleUtilityUpdate({
-                    feedback: { ...config!.utility.feedback, enabled: checked },
-                  })
-                }
-                disabled={loadingConfig || saving || !config}
+                onCheckedChange={(checked) => {
+                  if (!config) return;
+                  const previous = !!config.utility.feedback.enabled;
+                  setOptimisticFeedbackEnabled(checked);
+                  void (async () => {
+                    try {
+                      await handleUtilityUpdate({
+                        feedback: { ...config.utility.feedback, enabled: checked },
+                      }, { background: true });
+                    } catch {
+                      setOptimisticFeedbackEnabled(previous);
+                    } finally {
+                      setOptimisticFeedbackEnabled(null);
+                    }
+                  })();
+                }}
+                disabled={loadingConfig || !config}
               />
             </div>
 

@@ -771,7 +771,7 @@ export async function fetchCampaigns(params: CampaignListParams = {}): Promise<C
   if (params.limit) searchParams.set('limit', params.limit.toString());
 
   const queryString = searchParams.toString();
-  const raw = await apiClient<any>(`/api/campaigns${queryString ? `?${queryString}` : ''}`);
+  const raw = await apiClient<any>(`/api/campaign-runs${queryString ? `?${queryString}` : ''}`);
   const data = unwrapApiResponse<any>(raw);
 
   if (data && typeof data === 'object' && Array.isArray((data as any).campaigns)) {
@@ -792,7 +792,7 @@ export async function fetchCampaigns(params: CampaignListParams = {}): Promise<C
  * Fetch single campaign by ID
  */
 export async function fetchCampaign(campaignId: string): Promise<Campaign> {
-  const raw = await apiClient<any>(`/api/campaigns/${campaignId}`);
+  const raw = await apiClient<any>(`/api/campaign-runs/${campaignId}`);
   return unwrapApiResponse<Campaign>(raw);
 }
 
