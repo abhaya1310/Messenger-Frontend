@@ -48,6 +48,12 @@ export default function AdminOrgDetailsPage() {
     const [phoneNumberId, setPhoneNumberId] = useState("");
     const [displayPhoneNumber, setDisplayPhoneNumber] = useState("");
     const [displayName, setDisplayName] = useState("");
+    const [whatsappModel, setWhatsappModel] = useState<"shared" | "dedicated">("shared");
+    const [messagingTier, setMessagingTier] = useState("TIER_1K");
+    const [businessAccountId, setBusinessAccountId] = useState("");
+    const [accessToken, setAccessToken] = useState("");
+    const [tokenType, setTokenType] = useState<"system_user" | "user">("system_user");
+    const [tokenExpiresAt, setTokenExpiresAt] = useState("");
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const [saveOk, setSaveOk] = useState<string | null>(null);
@@ -116,6 +122,7 @@ export default function AdminOrgDetailsPage() {
             setPhoneNumberId(parsed.data?.whatsapp?.phoneNumberId || "");
             setDisplayPhoneNumber(parsed.data?.whatsapp?.displayPhoneNumber || "");
             setDisplayName(parsed.data?.whatsapp?.displayName || "");
+            setWhatsappModel(String(parsed.data?.whatsapp?.model || "shared").toLowerCase() === "dedicated" ? "dedicated" : "shared");
 
             setAbuseEnabled(Boolean(parsed.data?.abuseDetection?.enabled));
             setAbuseMaxOrdersPerDay(
@@ -438,7 +445,7 @@ export default function AdminOrgDetailsPage() {
         }
     };
 
-    const onUpdatePhone = async (e: FormEvent) => {
+    const onSaveWhatsappConfig = async (e: FormEvent) => {
         e.preventDefault();
         setSaveOk(null);
         setSaveError(null);
@@ -452,17 +459,34 @@ export default function AdminOrgDetailsPage() {
                 return;
             }
 
-            const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-            const url = `${backendBaseUrl}/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/update-phone-number-id`;
+            const endpoint =
+                whatsappModel === "dedicated"
+                    ? `/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/configure-dedicated`
+                    : `/api/admin/org/${encodeURIComponent(orgId)}/whatsapp/configure-shared`;
 
-            const res = await fetch(url, {
+            const payload: Record<string, unknown> = {
+                phoneNumberId: phoneNumberId.trim(),
+                displayPhoneNumber: displayPhoneNumber.trim(),
+                displayName: displayName.trim(),
+                messagingTier,
+            };
+
+            if (whatsappModel === "dedicated") {
+                payload.businessAccountId = businessAccountId.trim();
+                payload.accessToken = accessToken.trim();
+                payload.tokenType = tokenType;
+                if (tokenType === "user") {
+                    payload.tokenExpiresAt = tokenExpiresAt.trim();
+                }
+            }
+
+            const res = await fetch(endpoint, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "X-ORG-ID": orgId,
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ phoneNumberId, displayPhoneNumber, displayName }),
+                body: JSON.stringify(payload),
             });
 
             const data = await res.json().catch(() => ({}));
@@ -481,23 +505,19 @@ export default function AdminOrgDetailsPage() {
                     const otherOrgId = (data as any)?.orgId;
                     setSaveError(
                         typeof otherOrgId === 'string' && otherOrgId
-                            ? `phoneNumberId is already in use by orgId: ${otherOrgId}`
-                            : 'phoneNumberId is already in use by another org'
+                            ? `This phone number id is already configured for org ${otherOrgId}.`
+                            : 'This phone number id is already configured for another org.'
                     );
                     return;
                 }
-                if ((data as any)?.error === 'WhatsAppNotConfigured') {
-                    setSaveError('WhatsApp is not configured for this org');
-                    return;
-                }
-                setSaveError((data as any)?.error || "Failed to update phone number id");
+                setSaveError((data as any)?.error || (data as any)?.message || "Failed to configure WhatsApp");
                 return;
             }
 
-            setSaveOk("Phone number ID updated");
+            setSaveOk(whatsappModel === "dedicated" ? "WhatsApp configured (dedicated model)" : "WhatsApp configured (shared model)");
             await load();
         } catch (err) {
-            setSaveError(err instanceof Error ? err.message : "Failed to update phone number id");
+            setSaveError(err instanceof Error ? err.message : "Failed to configure WhatsApp");
         } finally {
             setSaving(false);
         }
@@ -554,6 +574,17 @@ export default function AdminOrgDetailsPage() {
                                             placeholder="220006"
                                             disabled={posSaving}
                                             required
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="messagingTier">messagingTier</Label>
+                                        <Input
+                                            id="messagingTier"
+                                            value={messagingTier}
+                                            onChange={(e) => setMessagingTier(e.target.value)}
+                                            placeholder="TIER_1K"
+                                            disabled={saving}
                                         />
                                     </div>
 
@@ -832,10 +863,32 @@ export default function AdminOrgDetailsPage() {
 
                         <Card>
                             <CardHeader>
-                                <CardTitle>Update Phone Number ID</CardTitle>
+                                <CardTitle>WhatsApp Configuration</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <form onSubmit={onUpdatePhone} className="space-y-4">
+                                <form onSubmit={onSaveWhatsappConfig} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Model</Label>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                type="button"
+                                                variant={whatsappModel === "shared" ? "default" : "outline"}
+                                                onClick={() => setWhatsappModel("shared")}
+                                                disabled={saving}
+                                            >
+                                                Shared
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant={whatsappModel === "dedicated" ? "default" : "outline"}
+                                                onClick={() => setWhatsappModel("dedicated")}
+                                                disabled={saving}
+                                            >
+                                                Dedicated
+                                            </Button>
+                                        </div>
+                                    </div>
+
                                     <div className="space-y-2">
                                         <Label htmlFor="phoneNumberId">phoneNumberId</Label>
                                         <Input
@@ -882,7 +935,7 @@ export default function AdminOrgDetailsPage() {
 
                                     <div className="flex justify-end">
                                         <Button type="submit" disabled={saving}>
-                                            {saving ? "Saving..." : "Update"}
+                                            {saving ? "Saving..." : "Save"}
                                         </Button>
                                     </div>
                                 </form>

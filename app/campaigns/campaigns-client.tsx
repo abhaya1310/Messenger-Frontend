@@ -17,10 +17,11 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import { getAuthToken, getCurrentOrgId } from "@/lib/auth";
+import { clearAuth, getAuthToken, getCurrentOrgId } from "@/lib/auth";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } from "@/lib/types/campaign-definition";
 import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
+import { MessagePreview } from "@/components/message-preview";
 
 async function parseJsonSafe(res: Response) {
     const text = await res.text();
@@ -149,6 +150,12 @@ export default function CampaignsClient() {
 
     const [createCustomPhoneNumbersRaw, setCreateCustomPhoneNumbersRaw] = useState("");
 
+    const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false);
+    const [catalogPreview, setCatalogPreview] = useState<CampaignDefinitionSummary | null>(null);
+    const [catalogPreviewDetail, setCatalogPreviewDetail] = useState<CampaignDefinition | null>(null);
+    const [catalogPreviewLoading, setCatalogPreviewLoading] = useState(false);
+    const [catalogPreviewError, setCatalogPreviewError] = useState<string | null>(null);
+
     const mappingList = useMemo(() => {
         const raw = (definitionDetail as any)?.templateVariableMappings;
         const list = Array.isArray(raw) ? (raw as CampaignDefinitionTemplateVariableMapping[]) : [];
@@ -180,6 +187,46 @@ export default function CampaignsClient() {
         }
     };
 
+    const loadCatalogPreviewDetail = async (id: string) => {
+        setCatalogPreviewError(null);
+        setCatalogPreviewLoading(true);
+        setCatalogPreviewDetail(null);
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
+
+            const res = await fetch(`/api/campaign-runs/definitions/${encodeURIComponent(id)}`, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const json = await parseJsonSafe(res);
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
+            if (!res.ok) {
+                const msg = (json as any)?.error || (json as any)?.message || "Failed to load definition";
+                throw new Error(msg);
+            }
+
+            const def = ((json as any)?.data || json) as CampaignDefinition;
+            setCatalogPreviewDetail(def);
+        } catch (e) {
+            setCatalogPreviewDetail(null);
+            setCatalogPreviewError(e instanceof Error ? e.message : "Failed to load definition");
+        } finally {
+            setCatalogPreviewLoading(false);
+        }
+    };
+
     const startPollingIfNeeded = (items: Campaign[]) => {
         const anyPreparing = items.some((c) => c.status === "preparing");
         if (!anyPreparing) {
@@ -200,8 +247,10 @@ export default function CampaignsClient() {
         try {
             const token = getAuthToken();
             if (!token) {
-                setError("Unauthorized");
+                setError("Session expired. Please login again.");
                 setCampaigns([]);
+                clearAuth();
+                router.push("/login");
                 return;
             }
 
@@ -223,6 +272,14 @@ export default function CampaignsClient() {
                 method: "GET",
                 headers,
             });
+
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                setCampaigns([]);
+                setError("Session expired. Please login again.");
+                return;
+            }
 
             const json = await parseJsonSafe(res);
             if (!res.ok) {
@@ -254,6 +311,11 @@ export default function CampaignsClient() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [resolvedOrgId]);
 
+    useEffect(() => {
+        loadDefinitions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const openCreate = () => {
         setError(null);
         setShowCreate(true);
@@ -282,12 +344,22 @@ export default function CampaignsClient() {
         loadSegments();
     };
 
+    const openCreateWithDefinition = (id: string) => {
+        openCreate();
+        setCreateDefinitionId(id);
+        if (id) loadDefinitionDetail(id);
+    };
+
     const loadDefinitions = async () => {
         setDefinitionsError(null);
         setDefinitionsLoading(true);
         try {
             const token = getAuthToken();
-            if (!token) throw new Error("Unauthorized");
+            if (!token) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
 
             const res = await fetch("/api/campaign-runs/definitions", {
                 method: "GET",
@@ -297,6 +369,11 @@ export default function CampaignsClient() {
             });
 
             const json = await parseJsonSafe(res);
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load campaign catalog";
                 throw new Error(msg);
@@ -318,7 +395,11 @@ export default function CampaignsClient() {
         setDefinitionDetail(null);
         try {
             const token = getAuthToken();
-            if (!token) throw new Error("Unauthorized");
+            if (!token) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
 
             const res = await fetch(`/api/campaign-runs/definitions/${encodeURIComponent(id)}`, {
                 method: "GET",
@@ -328,6 +409,11 @@ export default function CampaignsClient() {
             });
 
             const json = await parseJsonSafe(res);
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load definition";
                 throw new Error(msg);
@@ -357,7 +443,11 @@ export default function CampaignsClient() {
         setSegmentsLoading(true);
         try {
             const token = getAuthToken();
-            if (!token) throw new Error("Unauthorized");
+            if (!token) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
 
             const res = await fetch("/api/segments?limit=50&skip=0", {
                 method: "GET",
@@ -367,6 +457,11 @@ export default function CampaignsClient() {
             });
 
             const json = await parseJsonSafe(res);
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load segments";
                 throw new Error(msg);
@@ -487,6 +582,12 @@ export default function CampaignsClient() {
                 body: JSON.stringify(payload),
             });
 
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                throw new Error("Session expired. Please login again.");
+            }
+
             const json = await parseJsonSafe(res);
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to create campaign";
@@ -510,6 +611,86 @@ export default function CampaignsClient() {
     };
 
     const minDate = new Date().toISOString().split("T")[0];
+
+    function substituteTemplateText(params: {
+        text?: string;
+        sampleValues?: Record<string, string>;
+        userValues?: Record<number, string>;
+        mappings?: CampaignDefinitionTemplateVariableMapping[];
+    }): string {
+        const raw = params.text || "";
+        if (!raw) return "";
+        return raw.replace(/\{\{(\d+)\}\}/g, (_match, idxRaw) => {
+            const idx = String(idxRaw);
+            const uv = params.userValues?.[Number(idx)];
+            if (uv && String(uv).trim()) return String(uv);
+            const dummy = params.sampleValues?.[idx];
+            if (dummy && String(dummy).trim()) return String(dummy);
+
+            const mapping = params.mappings?.find((m) => String(m.position) === idx);
+            if (mapping) {
+                const st = String(mapping.sourceType || "").toLowerCase();
+                const fp = String(mapping.fieldPath || "");
+                if (st === "customer") {
+                    const path = fp.startsWith("customer.") ? fp.slice("customer.".length) : fp;
+                    return `[customer.${path}]`;
+                }
+                if (st === "transaction") {
+                    const path = fp.startsWith("transaction.") ? fp.slice("transaction.".length) : fp;
+                    return `[transaction.${path}]`;
+                }
+                if (st === "user_input") {
+                    return "[user input]";
+                }
+            }
+
+            return `{{${idx}}}`;
+        });
+    }
+
+    const campaignPreviewText = useMemo(() => {
+        const p = definitionDetail?.template?.preview;
+        if (!p) return "";
+        const rawMappings = (definitionDetail as any)?.templateVariableMappings;
+        const mappings = Array.isArray(rawMappings) ? (rawMappings as CampaignDefinitionTemplateVariableMapping[]) : [];
+
+        const header = substituteTemplateText({
+            text: p.headerText,
+            sampleValues: p.sampleValues,
+            userValues: userInputValues,
+            mappings,
+        });
+        const body = substituteTemplateText({
+            text: p.bodyText,
+            sampleValues: p.sampleValues,
+            userValues: userInputValues,
+            mappings,
+        });
+        const footer = substituteTemplateText({
+            text: p.footerText,
+            sampleValues: p.sampleValues,
+            userValues: userInputValues,
+            mappings,
+        });
+        return [header, body, footer].filter(Boolean).join("\n\n");
+    }, [definitionDetail, userInputValues]);
+
+    const catalogItems = useMemo(() => {
+        return (definitions || []).slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }, [definitions]);
+
+    const catalogPreviewText = useMemo(() => {
+        const p = catalogPreviewDetail?.template?.preview || catalogPreview?.template?.preview;
+        if (!p) return "";
+
+        const rawMappings = (catalogPreviewDetail as any)?.templateVariableMappings;
+        const mappings = Array.isArray(rawMappings) ? (rawMappings as CampaignDefinitionTemplateVariableMapping[]) : [];
+
+        const header = substituteTemplateText({ text: p.headerText, sampleValues: p.sampleValues, mappings });
+        const body = substituteTemplateText({ text: p.bodyText, sampleValues: p.sampleValues, mappings });
+        const footer = substituteTemplateText({ text: p.footerText, sampleValues: p.sampleValues, mappings });
+        return [header, body, footer].filter(Boolean).join("\n\n");
+    }, [catalogPreview, catalogPreviewDetail]);
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -545,6 +726,61 @@ export default function CampaignsClient() {
                         </CardContent>
                     </Card>
                 )}
+
+                <Card className="mb-6">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Published Campaign Catalog</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        {definitionsLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Loading catalog…
+                            </div>
+                        ) : definitionsError ? (
+                            <div className="text-sm text-destructive" role="alert">
+                                {definitionsError}
+                            </div>
+                        ) : catalogItems.length === 0 ? (
+                            <div className="text-sm text-muted-foreground">No published campaigns available.</div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {catalogItems.slice(0, 6).map((d) => {
+                                    const previewBody = d.template?.preview?.bodyText
+                                        ? substituteTemplateText({ text: d.template.preview.bodyText, sampleValues: d.template.preview.sampleValues })
+                                        : "";
+                                    return (
+                                        <div key={d._id} className="rounded-md border p-4 space-y-2">
+                                            <div className="font-medium">{d.name}</div>
+                                            {d.description ? <div className="text-sm text-muted-foreground">{d.description}</div> : null}
+                                            {previewBody ? (
+                                                <div className="rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
+                                                    {previewBody.length > 220 ? `${previewBody.slice(0, 220)}…` : previewBody}
+                                                </div>
+                                            ) : null}
+                                            <div className="flex gap-2 pt-1">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => {
+                                                        setCatalogPreview(d);
+                                                        setCatalogPreviewOpen(true);
+                                                        void loadCatalogPreviewDetail(d._id);
+                                                    }}
+                                                >
+                                                    Preview
+                                                </Button>
+                                                <Button size="sm" onClick={() => openCreateWithDefinition(d._id)}>
+                                                    Use this campaign
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
 
                 <Card className="mb-6">
                     <CardContent className="pt-6">
@@ -664,6 +900,61 @@ export default function CampaignsClient() {
                 )}
             </main>
 
+            <Dialog
+                open={catalogPreviewOpen}
+                onOpenChange={(open) => {
+                    setCatalogPreviewOpen(open);
+                    if (!open) {
+                        setCatalogPreview(null);
+                        setCatalogPreviewDetail(null);
+                        setCatalogPreviewError(null);
+                        setCatalogPreviewLoading(false);
+                    }
+                }}
+            >
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Campaign Preview</DialogTitle>
+                        <DialogDescription>Preview uses admin dummy values. User inputs can be configured next.</DialogDescription>
+                    </DialogHeader>
+
+                    {catalogPreviewLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading preview…
+                        </div>
+                    ) : catalogPreviewError ? (
+                        <div className="text-sm text-destructive" role="alert">
+                            {catalogPreviewError}
+                        </div>
+                    ) : catalogPreview && catalogPreviewText ? (
+                        <MessagePreview
+                            templateName={catalogPreview.template?.name || catalogPreview.name}
+                            language={catalogPreview.template?.language || ""}
+                            preview={catalogPreviewText}
+                        />
+                    ) : (
+                        <div className="text-sm text-muted-foreground">No preview available.</div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCatalogPreviewOpen(false)}>
+                            Close
+                        </Button>
+                        {catalogPreview ? (
+                            <Button
+                                onClick={() => {
+                                    setCatalogPreviewOpen(false);
+                                    openCreateWithDefinition(catalogPreview._id);
+                                }}
+                            >
+                                Use this campaign
+                            </Button>
+                        ) : null}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <Dialog open={showCreate} onOpenChange={setShowCreate}>
                 <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
@@ -759,9 +1050,11 @@ export default function CampaignsClient() {
                                                 {definitionDetail.template?.name} ({definitionDetail.template?.language})
                                             </div>
                                             {definitionDetail.template?.preview?.bodyText ? (
-                                                <div className="mt-2 rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
-                                                    {definitionDetail.template.preview.bodyText}
-                                                </div>
+                                                <MessagePreview
+                                                    templateName={definitionDetail.template?.name}
+                                                    language={definitionDetail.template?.language}
+                                                    preview={campaignPreviewText || definitionDetail.template.preview.bodyText}
+                                                />
                                             ) : null}
 
                                             {mappingList.length > 0 ? (

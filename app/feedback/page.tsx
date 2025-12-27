@@ -1,22 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/components/auth-provider";
 import { Loader2, RefreshCcw, Database, CheckCircle2, AlertCircle } from "lucide-react";
-import { getAuthToken } from "@/lib/auth";
+import { clearAuth, getAuthToken } from "@/lib/auth";
 import { fetchCampaignConfig, fetchOrgSettings, updateUtilityConfig } from "@/lib/api";
 import type { CampaignConfig, UtilityConfig } from "@/lib/types/campaign";
 import type { OrgSettings } from "@/lib/types/org-settings";
 import type { Order, OrdersListResponse } from "@/lib/types/order";
 import type { FeedbackDefinitionSingleResponse } from "@/lib/types/feedback-definition";
+import type { TemplateVariableMappings } from "@/lib/types/template-variable-mapping";
+import { MessagePreview } from "@/components/message-preview";
 
 type FeedbackDefinitionListItem = {
   _id: string;
@@ -25,6 +29,7 @@ type FeedbackDefinitionListItem = {
 };
 
 export default function FeedbackPage() {
+  const router = useRouter();
   const { orgId } = useAuth();
   const [config, setConfig] = useState<CampaignConfig | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -43,6 +48,10 @@ export default function FeedbackPage() {
   const [orgSettingsLoading, setOrgSettingsLoading] = useState(false);
   const [orgSettingsError, setOrgSettingsError] = useState<string | null>(null);
 
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
+  const [posIntegrationEnabled, setPosIntegrationEnabled] = useState<boolean | null>(null);
+
   const [ordersTodayCount, setOrdersTodayCount] = useState<number | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
@@ -52,6 +61,8 @@ export default function FeedbackPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<FeedbackDefinitionSingleResponse["data"] | null>(null);
+
+  const [previewUserInputs, setPreviewUserInputs] = useState<Record<string, string>>({});
 
   const publishedFeedbackDefinitions = useMemo(() => {
     return feedbackDefinitions
@@ -72,6 +83,48 @@ export default function FeedbackPage() {
       setError(e instanceof Error ? e.message : "Failed to load feedback configuration");
     } finally {
       setLoadingConfig(false);
+    }
+  };
+
+  const loadCapabilities = async () => {
+    setCapabilitiesLoading(true);
+    setCapabilitiesError(null);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        setPosIntegrationEnabled(null);
+        return;
+      }
+
+      const res = await fetch("/api/campaign-runs/capabilities", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.status === 401) {
+        clearAuth();
+        router.push("/login");
+        setPosIntegrationEnabled(null);
+        setCapabilitiesError("Session expired. Please login again.");
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPosIntegrationEnabled(null);
+        setCapabilitiesError((data as any)?.error || (data as any)?.message || "Failed to load capabilities");
+        return;
+      }
+
+      const enabled = Boolean((data as any)?.data?.posIntegrationEnabled);
+      setPosIntegrationEnabled(enabled);
+    } catch (e) {
+      setPosIntegrationEnabled(null);
+      setCapabilitiesError(e instanceof Error ? e.message : "Failed to load capabilities");
+    } finally {
+      setCapabilitiesLoading(false);
     }
   };
 
@@ -169,6 +222,14 @@ export default function FeedbackPage() {
         },
       });
 
+      if (res.status === 401) {
+        clearAuth();
+        router.push("/login");
+        setFeedbackDefinitions([]);
+        setFeedbackDefinitionsError("Session expired. Please login again.");
+        return;
+      }
+
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((data as any)?.error || (data as any)?.message || "Failed to load feedback definitions");
@@ -185,22 +246,22 @@ export default function FeedbackPage() {
   };
 
   useEffect(() => {
-    loadConfig();
-    loadFeedbackDefinitions();
-    loadOrgSettings();
+    void loadConfig();
+    void loadFeedbackDefinitions();
+    void loadOrgSettings();
+    void loadCapabilities();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
     const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
-    const posEnabled = !!orgSettings?.services?.posIntegration?.enabled;
-    if (posEnabled) {
-      loadOrdersTodayCount(tz);
+    if (posIntegrationEnabled) {
+      void loadOrdersTodayCount(tz);
     } else {
       setOrdersTodayCount(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config?.timezone, orgSettings?.services?.posIntegration?.enabled, orgSettings?.timezone]);
+  }, [config?.timezone, orgSettings?.timezone, posIntegrationEnabled]);
 
   const handleUtilityUpdate = async (updates: Partial<UtilityConfig>, opts?: { background?: boolean }) => {
     if (!config) return;
@@ -217,6 +278,13 @@ export default function FeedbackPage() {
       setConfig({ ...config, utility: updated });
       if (!background) setSavedMessage("Saved");
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("401") || msg.toLowerCase().includes("unauthorized")) {
+        clearAuth();
+        router.push("/login");
+        if (!background) setError("Session expired. Please login again.");
+        throw e;
+      }
       if (!background) setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
       throw e;
     } finally {
@@ -248,6 +316,12 @@ export default function FeedbackPage() {
         },
       });
 
+      if (res.status === 401) {
+        clearAuth();
+        router.push("/login");
+        throw new Error("Session expired. Please login again.");
+      }
+
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((json as any)?.error || (json as any)?.message || "Failed to load template preview");
@@ -256,6 +330,17 @@ export default function FeedbackPage() {
       const parsed = json as FeedbackDefinitionSingleResponse;
       const def = (parsed?.data || (json as any)?.data || json) as FeedbackDefinitionSingleResponse["data"];
       setPreviewData(def);
+
+      const mappings = ((def as any)?.templateVariableMappings || {}) as TemplateVariableMappings;
+      const existing = ((config as any)?.utility?.feedback?.userInputParameters || {}) as Record<string, string>;
+      const next: Record<string, string> = {};
+      for (const k of Object.keys(mappings || {})) {
+        const m = (mappings as any)[k];
+        if (m && m.source === "static") {
+          next[k] = String(existing?.[k] ?? "");
+        }
+      }
+      setPreviewUserInputs(next);
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : "Failed to load template preview");
       setPreviewData(null);
@@ -270,17 +355,78 @@ export default function FeedbackPage() {
     await loadFeedbackDefinitionPreview(id);
   };
 
+  const previewMappings = useMemo(() => {
+    return (((previewData as any)?.templateVariableMappings || {}) as TemplateVariableMappings) || {};
+  }, [previewData]);
+
+  const previewUserInputKeys = useMemo(() => {
+    const keys = Object.keys(previewMappings || {}).filter((k) => (previewMappings as any)?.[k]?.source === "static");
+    return keys
+      .map((k) => Number(k))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b)
+      .map((n) => String(n));
+  }, [previewMappings]);
+
+  function substituteTemplateText(params: {
+    text?: string;
+    sampleValues?: Record<string, string>;
+    mappings?: TemplateVariableMappings;
+    userValues?: Record<string, string>;
+  }): string {
+    const raw = params.text || "";
+    if (!raw) return "";
+
+    return raw.replace(/\{\{(\d+)\}\}/g, (_match, idxRaw) => {
+      const idx = String(idxRaw);
+      const uv = params.userValues?.[idx];
+      if (uv && String(uv).trim()) return String(uv);
+
+      const dummy = params.sampleValues?.[idx];
+      if (dummy && String(dummy).trim()) return String(dummy);
+
+      const mapping = params.mappings?.[idx];
+      if (!mapping) return `{{${idx}}}`;
+      if ((mapping as any).source === "customer") return `[customer.${(mapping as any).path}]`;
+      if ((mapping as any).source === "transaction") return `[transaction.${(mapping as any).path}]`;
+      return "[user input]";
+    });
+  }
+
+  const previewText = useMemo(() => {
+    const p = previewData?.template?.preview;
+    if (!p) return "";
+    const header = substituteTemplateText({
+      text: p.headerText,
+      sampleValues: p.sampleValues,
+      mappings: previewMappings,
+      userValues: previewUserInputs,
+    });
+    const body = substituteTemplateText({
+      text: p.bodyText,
+      sampleValues: p.sampleValues,
+      mappings: previewMappings,
+      userValues: previewUserInputs,
+    });
+    const footer = substituteTemplateText({
+      text: p.footerText,
+      sampleValues: p.sampleValues,
+      mappings: previewMappings,
+      userValues: previewUserInputs,
+    });
+
+    return [header, body, footer].filter(Boolean).join("\n\n");
+  }, [previewData, previewMappings, previewUserInputs]);
+
   const selectedDefinitionName = useMemo(() => {
     const match = feedbackDefinitions.find((d) => d._id === feedbackDefinitionId);
     return match?.name || "";
   }, [feedbackDefinitions, feedbackDefinitionId]);
 
-  const posEnabled = !!orgSettings?.services?.posIntegration?.enabled;
-  const posActive = !!orgSettings?.posApiCredentials?.isActive;
-  const posIntegrationLive = posEnabled && posActive;
+  const posEnabled = !!posIntegrationEnabled;
 
   const refreshAll = async () => {
-    await Promise.all([loadConfig(), loadFeedbackDefinitions(), loadOrgSettings()]);
+    await Promise.all([loadConfig(), loadFeedbackDefinitions(), loadOrgSettings(), loadCapabilities()]);
     const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
     if (posEnabled) {
       await loadOrdersTodayCount(tz);
@@ -472,20 +618,20 @@ export default function FeedbackPage() {
                     POS Integration
                   </div>
                   <div className="text-sm text-gray-600">
-                    {orgSettingsLoading ? "Loading POS status..." : posEnabled ? "Connected" : "Not connected"}
+                    {capabilitiesLoading ? "Loading POS status..." : posEnabled ? "Enabled" : "Not enabled"}
                   </div>
                 </div>
                 {posEnabled ? (
                   <Badge variant="outline" className="gap-1">
-                    {posIntegrationLive ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <AlertCircle className="h-3.5 w-3.5 text-amber-600" />}
-                    {posIntegrationLive ? "Integration live" : "Needs attention"}
+                    <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                    POS enabled
                   </Badge>
                 ) : (
                   <Badge variant="secondary">Offline</Badge>
                 )}
               </div>
 
-              {orgSettingsError ? (
+              {capabilitiesError || orgSettingsError ? (
                 <div className="mt-2 text-xs text-amber-700" role="alert">
                   Unable to load POS status. Please refresh.
                 </div>
@@ -557,27 +703,58 @@ export default function FeedbackPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 p-4 space-y-2">
-                <div className="text-xs text-muted-foreground">Preview</div>
-                {previewData.template?.preview?.headerText ? (
-                  <div className="text-sm font-medium">{previewData.template.preview.headerText}</div>
-                ) : null}
-                {previewData.template?.preview?.bodyText ? (
-                  <div className="text-sm whitespace-pre-wrap">{previewData.template.preview.bodyText}</div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">No preview available.</div>
-                )}
-                {previewData.template?.preview?.footerText ? (
-                  <div className="text-xs text-muted-foreground">{previewData.template.preview.footerText}</div>
-                ) : null}
-              </div>
+              {previewText ? (
+                <MessagePreview templateName={previewData.template?.name || previewData.name} language={previewData.template?.language || ""} preview={previewText} />
+              ) : (
+                <div className="rounded-xl border border-gray-200 p-4 text-sm text-muted-foreground">No preview available.</div>
+              )}
 
-              <div className="rounded-xl border border-gray-200 p-4">
-                <div className="text-sm font-medium">Variable setup</div>
-                <div className="text-sm text-muted-foreground">
-                  Variable assignment UI will be added next. For now, you can save this template selection.
+              {Object.keys(previewMappings || {}).length > 0 ? (
+                <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                  <div className="text-sm font-medium">Variables</div>
+                  <div className="space-y-3">
+                    {Object.keys(previewMappings)
+                      .map((k) => Number(k))
+                      .filter((n) => Number.isFinite(n))
+                      .sort((a, b) => a - b)
+                      .map((n) => {
+                        const key = String(n);
+                        const mapping = (previewMappings as any)?.[key];
+                        const isUserInput = mapping?.source === "static";
+                        const label = isUserInput ? (String(mapping?.label || "").trim() || `{{${key}}}`) : `{{${key}}}`;
+                        const displayValue = isUserInput
+                          ? String(previewUserInputs?.[key] ?? "")
+                          : mapping?.source === "customer" || mapping?.source === "transaction"
+                            ? String(mapping?.path || "")
+                            : "";
+
+                        return (
+                          <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-md border p-3">
+                            <div className="text-xs font-medium text-gray-700">{`{{${key}}}`}</div>
+                            <div className="text-xs text-muted-foreground capitalize">{String(mapping?.source || "").replace("_", " ")}</div>
+                            <div className="space-y-1">
+                              {isUserInput ? (
+                                <>
+                                  <Label className="text-xs">{label} *</Label>
+                                  <Input
+                                    value={displayValue}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                      const v = e.target.value;
+                                      setPreviewUserInputs((prev) => ({ ...prev, [key]: v }));
+                                    }}
+                                    placeholder="Enter value"
+                                  />
+                                </>
+                              ) : (
+                                <div className="text-xs text-gray-700 break-all">{displayValue || "—"}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -588,8 +765,22 @@ export default function FeedbackPage() {
             <Button
               onClick={async () => {
                 if (!config || !pendingDefinitionId) return;
+
+                for (const k of previewUserInputKeys) {
+                  const v = String(previewUserInputs?.[k] ?? "").trim();
+                  if (!v) {
+                    setPreviewError("Please fill all required values.");
+                    return;
+                  }
+                }
+
                 await handleUtilityUpdate({
-                  feedback: { ...config.utility.feedback, enabled: true, definitionId: pendingDefinitionId },
+                  feedback: {
+                    ...config.utility.feedback,
+                    enabled: true,
+                    definitionId: pendingDefinitionId,
+                    ...(previewUserInputKeys.length > 0 ? { userInputParameters: previewUserInputs } : {}),
+                  },
                 });
                 setPreviewOpen(false);
               }}

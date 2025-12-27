@@ -159,6 +159,7 @@ export interface UtilityConfig {
     enabled: boolean;
     delayMinutes: number;   // 15-1440 minutes
     definitionId: string;
+    userInputParameters?: Record<string, string>;
   };
   reviewRequest: {
     enabled: boolean;
