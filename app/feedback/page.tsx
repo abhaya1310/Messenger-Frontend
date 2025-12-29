@@ -327,38 +327,74 @@ export default function FeedbackPage() {
     return publishedFeedbackDefinitions.find((d) => d._id === feedbackDefinitionId) || null;
   }, [publishedFeedbackDefinitions, feedbackDefinitionId]);
 
-  const requiredUserInputKeys = useMemo(() => {
-    const mappings = ((selectedFeedbackDefinition as any)?.templateVariableMappings || {}) as TemplateVariableMappings;
-    const keys = Object.keys(mappings || {}).filter((k) => (mappings as any)?.[k]?.source === "static");
+  const feedbackTemplateMappings = useMemo(() => {
+    return (((selectedFeedbackDefinition as any)?.templateVariableMappings || {}) as TemplateVariableMappings) || {};
+  }, [selectedFeedbackDefinition]);
+
+  const feedbackTemplateSampleValues = useMemo(() => {
+    return (((selectedFeedbackDefinition as any)?.template?.preview?.sampleValues || {}) as Record<string, string>) || {};
+  }, [selectedFeedbackDefinition]);
+
+  const allTemplateVariableKeys = useMemo(() => {
+    const keys = Array.from(
+      new Set([
+        ...Object.keys(feedbackTemplateMappings || {}),
+        ...Object.keys(feedbackTemplateSampleValues || {}),
+      ])
+    );
     return keys
       .map((k) => Number(k))
       .filter((n) => Number.isFinite(n))
       .sort((a, b) => a - b)
       .map((n) => String(n));
-  }, [selectedFeedbackDefinition]);
+  }, [feedbackTemplateMappings, feedbackTemplateSampleValues]);
+
+  const unmappedVariableKeys = useMemo(() => {
+    if (!selectedFeedbackDefinition) return [] as string[];
+    return allTemplateVariableKeys.filter((k) => !((feedbackTemplateMappings as any)?.[k] as any));
+  }, [allTemplateVariableKeys, feedbackTemplateMappings, selectedFeedbackDefinition]);
+
+  const userEditableVariableKeys = useMemo(() => {
+    if (!selectedFeedbackDefinition) return [] as string[];
+    return allTemplateVariableKeys.filter((k) => {
+      const mapping = (feedbackTemplateMappings as any)?.[k] as any;
+      if (!mapping) return false;
+      if (mapping.source !== "static") return false;
+      const preset = String(mapping?.value ?? "").trim();
+      return !preset;
+    });
+  }, [allTemplateVariableKeys, feedbackTemplateMappings, selectedFeedbackDefinition]);
 
   const isFeedbackConfigured = useMemo(() => {
     if (!feedbackDefinitionId) return false;
     if (!Number.isFinite(feedbackDelayMinutes) || feedbackDelayMinutes < MIN_FEEDBACK_DELAY_MINUTES) return false;
-    for (const k of requiredUserInputKeys) {
+    if (unmappedVariableKeys.length > 0) return false;
+    for (const k of userEditableVariableKeys) {
       const v = String((userInputDraft as any)?.[k] ?? "").trim();
       if (!v) return false;
     }
     return true;
-  }, [feedbackDefinitionId, feedbackDelayMinutes, requiredUserInputKeys, userInputDraft, MIN_FEEDBACK_DELAY_MINUTES]);
+  }, [
+    feedbackDefinitionId,
+    feedbackDelayMinutes,
+    unmappedVariableKeys.length,
+    userEditableVariableKeys,
+    userInputDraft,
+    MIN_FEEDBACK_DELAY_MINUTES,
+  ]);
 
   const feedbackEnabled = optimisticFeedbackEnabled ?? (!!config?.utility?.feedback?.enabled && isFeedbackConfigured);
 
-  const feedbackParamKeys = useMemo(() => {
-    const sample = ((selectedFeedbackDefinition as any)?.template?.preview?.sampleValues || {}) as Record<string, string>;
-    const existing = (userInputDraft || {}) as Record<string, string>;
-    const keys = Array.from(new Set([...Object.keys(sample), ...Object.keys(existing)]));
-    return keys
-      .map((k) => Number(k))
-      .filter((n) => Number.isFinite(n))
-      .sort((a, b) => a - b)
-      .map((n) => String(n));
-  }, [selectedFeedbackDefinition, userInputDraft]);
+  const previewText = useMemo(() => {
+    const preview = (selectedFeedbackDefinition as any)?.template?.preview as any;
+    const message = String(preview?.message ?? "").trim();
+    if (message) return message;
+    const composed = [preview?.headerText, preview?.bodyText, preview?.footerText]
+      .map((s: any) => String(s ?? "").trim())
+      .filter(Boolean)
+      .join("\n");
+    return composed.trim();
+  }, [selectedFeedbackDefinition]);
 
   const selectedDefinitionName = useMemo(() => {
     const match = publishedFeedbackDefinitions.find((d) => d._id === feedbackDefinitionId);
@@ -539,16 +575,24 @@ export default function FeedbackPage() {
                   <div className="space-y-3 rounded-xl border border-gray-200 p-4">
                     <div className="text-sm font-medium">Template preview</div>
                     <div className="text-sm text-muted-foreground">
-                      {String((selectedFeedbackDefinition as any)?.template?.preview?.message || "Preview not available")}
+                      {previewText || "Preview not available"}
                     </div>
 
-                    {feedbackParamKeys.length > 0 ? (
+                    {unmappedVariableKeys.length > 0 ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+                        Template mapping is incomplete for variables: {unmappedVariableKeys.map((k) => `{{${k}}}`).join(", ")}. Please ask admin to configure mappings.
+                      </div>
+                    ) : null}
+
+                    {userEditableVariableKeys.length > 0 ? (
                       <div className="space-y-3">
-                        <div className="text-sm font-medium">Template parameters</div>
+                        <div className="text-sm font-medium">Parameters requiring setup</div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {feedbackParamKeys.map((k) => (
+                          {userEditableVariableKeys.map((k) => (
                             <div key={k} className="space-y-1">
-                              <Label className="text-xs">{`{{${k}}}`}</Label>
+                              <Label className="text-xs">
+                                {String(((feedbackTemplateMappings as any)?.[k] as any)?.label || `{{${k}}}`)}
+                              </Label>
                               <Input
                                 value={String(userInputDraft?.[k] ?? "")}
                                 onChange={(e) => {
@@ -556,7 +600,7 @@ export default function FeedbackPage() {
                                   setError(null);
                                   setUserInputDraft((prev) => ({ ...prev, [k]: v }));
                                 }}
-                                placeholder={String(((selectedFeedbackDefinition as any)?.template?.preview?.sampleValues || {})?.[k] ?? "")}
+                                placeholder={String((feedbackTemplateSampleValues as any)?.[k] ?? "")}
                               />
                             </div>
                           ))}
@@ -572,7 +616,11 @@ export default function FeedbackPage() {
                                   ...config.utility.feedback,
                                   definitionId: feedbackDefinitionId,
                                   campaignDefinitionId: feedbackDefinitionId,
-                                  userInputParameters: userInputDraft,
+                                  userInputParameters: userEditableVariableKeys.reduce<Record<string, string>>((acc, k) => {
+                                    const v = String((userInputDraft as any)?.[k] ?? "");
+                                    acc[k] = v;
+                                    return acc;
+                                  }, {}),
                                 },
                               });
                             }}
