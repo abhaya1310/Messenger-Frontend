@@ -3,8 +3,13 @@ export interface SegmentAudience {
 }
 
 export interface PosSegment {
-    _id: string;
+    id?: string;
+    _id?: string;
     name: string;
+    status?: string;
+    estimatedSize?: number;
+    lastComputedAt?: string | null;
+    lastError?: string | null;
     description?: string;
     audience?: SegmentAudience;
     updatedAt?: string;
@@ -12,5 +17,10 @@ export interface PosSegment {
 
 export interface PosSegmentsListResponse {
     success: boolean;
-    data: PosSegment[];
+    data: {
+        items: PosSegment[];
+        total?: number;
+        limit?: number;
+        skip?: number;
+    };
 }

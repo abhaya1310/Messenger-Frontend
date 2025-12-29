@@ -33,6 +33,7 @@ export interface CampaignDefinitionSummary {
 }
 
 export interface CampaignRun {
+    id?: string;
     _id: string;
     orgId: string;
     campaignDefinitionId: CampaignDefinitionSummary;

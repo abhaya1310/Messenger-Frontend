@@ -30,7 +30,7 @@ import type {
     CampaignRunStatus,
     CampaignDefinitionSummary,
 } from "@/lib/types/campaign-run";
-import type { PosSegment, PosSegmentsListResponse } from "@/lib/types/pos-segments";
+import type { PosSegmentsListResponse } from "@/lib/types/pos-segments";
 
 function statusBadgeVariant(status: CampaignRunStatus) {
     switch (status) {
@@ -103,12 +103,22 @@ async function parseJsonSafe(res: Response) {
     }
 }
 
+type SegmentPosListItem = {
+    id: string;
+    name: string;
+    status?: string;
+    updatedAt?: string;
+    lastComputedAt?: string;
+};
+
 async function fetchCreditsPrecheckOrThrow(runId: string, token: string) {
     const precheckRes = await fetch(`/api/campaign-runs/${encodeURIComponent(runId)}/precheck-credits`, {
-        method: "GET",
+        method: "POST",
         headers: {
+            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
         },
+        body: "{}",
     });
 
     const precheckJson = await parseJsonSafe(precheckRes);
@@ -120,13 +130,47 @@ async function fetchCreditsPrecheckOrThrow(runId: string, token: string) {
     return (precheckJson as any)?.data as any;
 }
 
+function getRunId(run: CampaignRun): string {
+    return String((run as any)?.id || (run as any)?._id || "");
+}
+
+function getSegmentIdFromRun(run: CampaignRun): string {
+    return String((run as any)?.segmentId || "");
+}
+
+function formatScheduleConflictMessage(payload: any): string {
+    const err = payload?.error ?? payload;
+    const code = String(err?.code || err?.reason || payload?.reasonCode || "");
+    if (code === "SEGMENT_NOT_READY") {
+        return err?.message || payload?.message || "Segment not computed/fresh. Please recompute.";
+    }
+    if (code === "INSUFFICIENT_CREDITS") {
+        const required = err?.details?.required;
+        const available = err?.details?.available;
+        const bucket = err?.details?.bucket;
+        const parts = [err?.message || payload?.message || "Not enough credits to reserve for this run."];
+        if (bucket) parts.push(`Bucket: ${bucket}`);
+        if (typeof required === "number" && typeof available === "number") {
+            parts.push(`Required: ${required.toLocaleString()} | Available: ${available.toLocaleString()}`);
+        }
+        return parts.join("\n");
+    }
+    if (code === "FIRE_AT_REQUIRED") {
+        return "Fire time is required.";
+    }
+    if (code === "INVALID_FIRE_AT") {
+        return "Fire time is invalid.";
+    }
+    return err?.message || payload?.message || payload?.error || "Unable to schedule this run.";
+}
+
 export default function CampaignRunsClient() {
     const { orgId } = useAuth();
     const [runs, setRuns] = useState<CampaignRun[]>([]);
     const [definitions, setDefinitions] = useState<CampaignDefinitionSummary[]>([]);
     const [posEnabled, setPosEnabled] = useState(false);
 
-    const [segments, setSegments] = useState<PosSegment[]>([]);
+    const [segments, setSegments] = useState<SegmentPosListItem[]>([]);
     const [segmentsLoading, setSegmentsLoading] = useState(false);
     const [segmentsError, setSegmentsError] = useState<string | null>(null);
 
@@ -168,13 +212,13 @@ export default function CampaignRunsClient() {
                 return (
                     (def?.name || "").toLowerCase().includes(q) ||
                     (def?.key || "").toLowerCase().includes(q) ||
-                    (r._id || "").toLowerCase().includes(q)
+                    (getRunId(r) || "").toLowerCase().includes(q)
                 );
             });
     }, [runs, searchQuery, statusFilter]);
 
     useEffect(() => {
-        const runId = selectedRun?._id;
+        const runId = selectedRun ? getRunId(selectedRun) : "";
         if (!runId) {
             setCreditsPrecheck(null);
             setCreditsPrecheckError(null);
@@ -216,7 +260,7 @@ export default function CampaignRunsClient() {
         return () => {
             cancelled = true;
         };
-    }, [selectedRun?._id, selectedRun?.status]);
+    }, [selectedRun ? getRunId(selectedRun) : "", selectedRun?.status]);
 
     const loadAll = async () => {
         setError(null);
@@ -263,7 +307,14 @@ export default function CampaignRunsClient() {
                 const msg = (runsJson as any)?.error || (runsJson as any)?.message || "Failed to load campaign runs";
                 throw new Error(msg);
             }
-            setRuns(((runsJson as any)?.data || []) as CampaignRun[]);
+            const raw = (runsJson as any)?.data;
+            const items =
+                (Array.isArray(raw?.items) ? raw.items : null) ??
+                (Array.isArray(raw) ? raw : null) ??
+                ((runsJson as any)?.campaigns && Array.isArray((runsJson as any)?.campaigns) ? (runsJson as any)?.campaigns : null) ??
+                ((runsJson as any)?.runs && Array.isArray((runsJson as any)?.runs) ? (runsJson as any)?.runs : null) ??
+                [];
+            setRuns(items as CampaignRun[]);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load campaign runs");
         } finally {
@@ -278,7 +329,7 @@ export default function CampaignRunsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
-            const res = await fetch("/api/admin/pos/segments", {
+            const res = await fetch("/api/segments/pos", {
                 method: "GET",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -292,7 +343,17 @@ export default function CampaignRunsClient() {
             }
 
             const parsed = data as PosSegmentsListResponse;
-            setSegments(Array.isArray((parsed as any)?.data) ? ((parsed as any).data as PosSegment[]) : []);
+            const items = Array.isArray((parsed as any)?.data?.items) ? ((parsed as any).data.items as any[]) : [];
+            const next: SegmentPosListItem[] = items
+                .map((s) => ({
+                    id: String(s?.id || s?._id || ""),
+                    name: String(s?.name || ""),
+                    status: s?.status,
+                    updatedAt: s?.updatedAt,
+                    lastComputedAt: s?.lastComputedAt,
+                }))
+                .filter((s) => s.id && s.name);
+            setSegments(next);
         } catch (e) {
             setSegmentsError(e instanceof Error ? e.message : "Failed to load segments");
             setSegments([]);
@@ -319,7 +380,7 @@ export default function CampaignRunsClient() {
     const createRun = async () => {
         setError(null);
 
-        if (!createDefinitionId || !createFireAt || !createSegmentId) {
+        if (!createDefinitionId || !createSegmentId) {
             setError("Please fill in all required fields");
             return;
         }
@@ -349,7 +410,6 @@ export default function CampaignRunsClient() {
                 },
                 body: JSON.stringify({
                     campaignDefinitionId: createDefinitionId,
-                    fireAt: createFireAt,
                     name: createName.trim() || undefined,
                     audience: { source: "segment" },
                     segmentId: createSegmentId,
@@ -377,8 +437,8 @@ export default function CampaignRunsClient() {
     useEffect(() => {
         if (!selectedRun) return;
         setRunEditName(selectedRun.name || "");
-        setRunEditFireAt(selectedRun.fireAt || "");
-        setRunEditSegmentId(selectedRun.segmentId || "");
+        setRunEditFireAt((selectedRun as any).fireAt || "");
+        setRunEditSegmentId(getSegmentIdFromRun(selectedRun));
         setRunEditTemplateParams(selectedRun.templateParams || {});
     }, [selectedRun]);
 
@@ -440,12 +500,12 @@ export default function CampaignRunsClient() {
 
         const updated = (data as any)?.data as CampaignRun;
         setSelectedRun(updated);
-        setRuns((prev) => prev.map((r) => (r._id === id ? updated : r)));
+        setRuns((prev) => prev.map((r) => (getRunId(r) === id ? updated : r)));
     };
 
     const doAction = async (run: CampaignRun, action: "schedule" | "cancel" | "delete") => {
         setError(null);
-        setActionLoadingId(run._id);
+        setActionLoadingId(getRunId(run));
         try {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
@@ -454,7 +514,7 @@ export default function CampaignRunsClient() {
                 if (run.status !== "draft") {
                     throw new Error("Only draft runs can be scheduled");
                 }
-                if (!run.segmentId) {
+                if (!getSegmentIdFromRun(run)) {
                     throw new Error("Segment is required before scheduling");
                 }
                 const params = run.templateParams || {};
@@ -462,34 +522,50 @@ export default function CampaignRunsClient() {
                 if (!hasAny) {
                     throw new Error("Template parameters are required before scheduling");
                 }
+                if (!runEditFireAt) {
+                    throw new Error("Please select a fire time before scheduling");
+                }
             }
 
             const url =
                 action === "delete"
-                    ? `/api/campaign-runs/${encodeURIComponent(run._id)}`
-                    : `/api/campaign-runs/${encodeURIComponent(run._id)}/${action}`;
+                    ? `/api/campaign-runs/${encodeURIComponent(getRunId(run))}`
+                    : `/api/campaign-runs/${encodeURIComponent(getRunId(run))}/${action}`;
+
+            const body =
+                action === "schedule"
+                    ? JSON.stringify({ fireAt: runEditFireAt })
+                    : undefined;
 
             const res = await fetch(url, {
                 method: action === "delete" ? "DELETE" : "POST",
                 headers: {
+                    ...(action === "schedule" ? { "Content-Type": "application/json" } : {}),
                     Authorization: `Bearer ${token}`,
                 },
+                body,
             });
 
             const data = await parseJsonSafe(res);
             if (!res.ok) {
+                if (res.status === 409 && action === "schedule") {
+                    throw new Error(formatScheduleConflictMessage(data));
+                }
+                if (res.status === 400 && action === "schedule") {
+                    throw new Error(formatScheduleConflictMessage(data));
+                }
                 const msg = (data as any)?.error || (data as any)?.message || `Failed to ${action}`;
                 throw new Error(msg);
             }
 
-            await refreshRun(run._id);
+            await refreshRun(getRunId(run));
             if (action === "schedule") {
                 setCreditsPrecheck(null);
                 setCreditsPrecheckError(null);
             }
             if (action === "delete") {
                 setSelectedRun(null);
-                setRuns((prev) => prev.filter((r) => r._id !== run._id));
+                setRuns((prev) => prev.filter((r) => getRunId(r) !== getRunId(run)));
             }
 
             if (action !== "delete") {
@@ -676,9 +752,10 @@ export default function CampaignRunsClient() {
                             </TableHeader>
                             <TableBody>
                                 {filteredRuns.map((r) => {
-                                    const busy = actionLoadingId === r._id;
+                                    const id = getRunId(r);
+                                    const busy = actionLoadingId === id;
                                     return (
-                                        <TableRow key={r._id} className="cursor-pointer" onClick={() => setSelectedRun(r)}>
+                                        <TableRow key={id || r._id} className="cursor-pointer" onClick={() => setSelectedRun(r)}>
                                             <TableCell>
                                                 <div>
                                                     <p className="font-medium">{r.campaignDefinitionId?.name || r.campaignDefinitionId?.key || r._id}</p>
@@ -698,8 +775,8 @@ export default function CampaignRunsClient() {
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                                                     {r.status === "draft" && (
-                                                        <Button size="sm" variant="outline" onClick={() => doAction(r, "schedule")} disabled={busy}>
-                                                            Schedule
+                                                        <Button size="sm" variant="outline" onClick={() => setSelectedRun(r)} disabled={busy}>
+                                                            Open
                                                         </Button>
                                                     )}
                                                     {(r.status === "draft" || r.status === "scheduled" || r.status === "waiting_for_credits") && (
@@ -825,8 +902,8 @@ export default function CampaignRunsClient() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         {segments.map((s) => (
-                                            <SelectItem key={s._id} value={s._id}>
-                                                {s.name}{typeof s.audience?.size === "number" ? ` (${s.audience.size.toLocaleString()})` : ""}
+                                            <SelectItem key={s.id} value={s.id}>
+                                                {s.name}{s.status && s.status !== "ready" ? ` (${s.status})` : ""}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
@@ -845,7 +922,7 @@ export default function CampaignRunsClient() {
                         </TabsContent>
 
                         <TabsContent value="schedule" className="space-y-4 mt-4">
-                            <DateTimePicker label="Fire At *" value={createFireAt} onChange={setCreateFireAt} minDate={minDate} required />
+                            <DateTimePicker label="Fire At (set later when scheduling)" value={createFireAt} onChange={setCreateFireAt} minDate={minDate} required={false as any} />
                         </TabsContent>
                     </Tabs>
 
@@ -916,8 +993,8 @@ export default function CampaignRunsClient() {
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     {segments.map((s) => (
-                                                        <SelectItem key={s._id} value={s._id}>
-                                                            {s.name}{typeof s.audience?.size === "number" ? ` (${s.audience.size.toLocaleString()})` : ""}
+                                                        <SelectItem key={s.id} value={s.id}>
+                                                            {s.name}{s.status && s.status !== "ready" ? ` (${s.status})` : ""}
                                                         </SelectItem>
                                                     ))}
                                                 </SelectContent>
@@ -992,33 +1069,58 @@ export default function CampaignRunsClient() {
                                         {creditsPrecheck && !creditsPrecheckLoading && !creditsPrecheckError && (
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                                                 <div>
-                                                    <div className="text-gray-500">Sufficient</div>
-                                                    <div className="font-medium">{String(Boolean(creditsPrecheck.isSufficient))}</div>
+                                                    <div className="text-gray-500">Can schedule</div>
+                                                    <div className="font-medium">
+                                                        {String(Boolean((creditsPrecheck as any)?.canSchedule ?? (creditsPrecheck as any)?.isUsable))}
+                                                    </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-gray-500">Total Audience</div>
-                                                    <div className="font-medium">{Number(creditsPrecheck.totalAudienceCount || 0).toLocaleString()}</div>
+                                                    <div className="text-gray-500">Segment ready</div>
+                                                    <div className="font-medium">{String(Boolean((creditsPrecheck as any)?.segmentReady ?? (creditsPrecheck as any)?.segment?.isFresh))}</div>
                                                 </div>
                                                 <div>
                                                     <div className="text-gray-500">Credits Required</div>
-                                                    <div className="font-medium">{Number(creditsPrecheck.creditsRequired || 0).toLocaleString()}</div>
+                                                    <div className="font-medium">
+                                                        {Number((creditsPrecheck as any)?.creditsCheck?.required ?? (creditsPrecheck as any)?.requiredCredits ?? (creditsPrecheck as any)?.creditsRequired ?? 0).toLocaleString()}
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <div className="text-gray-500">Credits Available</div>
-                                                    <div className="font-medium">{Number(creditsPrecheck.creditsAvailable || 0).toLocaleString()}</div>
+                                                    <div className="font-medium">
+                                                        {Number((creditsPrecheck as any)?.creditsCheck?.available ?? (creditsPrecheck as any)?.creditsAvailable ?? 0).toLocaleString()}
+                                                    </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-gray-500">Eligible Count</div>
-                                                    <div className="font-medium">{Number(creditsPrecheck.eligibleCount || 0).toLocaleString()}</div>
+                                                    <div className="text-gray-500">Bucket</div>
+                                                    <div className="font-medium">{String((creditsPrecheck as any)?.creditsCheck?.bucket ?? (creditsPrecheck as any)?.bucket ?? "—")}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-gray-500">Throttled (24h)</div>
-                                                    <div className="font-medium">{Number(creditsPrecheck.throttledCount || 0).toLocaleString()}</div>
+                                                    <div className="text-gray-500">Reason</div>
+                                                    <div className="font-medium">{String((creditsPrecheck as any)?.reasonCode ?? "—")}</div>
                                                 </div>
-                                                {creditsPrecheck.isSufficient === false && (
+                                                {(typeof (creditsPrecheck as any)?.eligibleCount === "number" || typeof (creditsPrecheck as any)?.throttledCount === "number") && (
+                                                    <>
+                                                        <div>
+                                                            <div className="text-gray-500">Eligible Count</div>
+                                                            <div className="font-medium">{Number((creditsPrecheck as any)?.eligibleCount || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-gray-500">Throttled (24h)</div>
+                                                            <div className="font-medium">{Number((creditsPrecheck as any)?.throttledCount || 0).toLocaleString()}</div>
+                                                        </div>
+                                                    </>
+                                                )}
+                                                {(Boolean((creditsPrecheck as any)?.segmentReady) === false || (creditsPrecheck as any)?.reasonCode === "SEGMENT_NOT_READY") && (
                                                     <div className="md:col-span-2">
                                                         <p className="text-sm text-amber-700">
-                                                            Insufficient credits. You can still schedule: the run will move to <span className="font-medium">waiting_for_credits</span>.
+                                                            Segment not computed/fresh. Please recompute.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                {(Boolean((creditsPrecheck as any)?.creditsCheck?.isSufficient) === false || (creditsPrecheck as any)?.reasonCode === "INSUFFICIENT_CREDITS") && (
+                                                    <div className="md:col-span-2">
+                                                        <p className="text-sm text-amber-700">
+                                                            Insufficient credits. Please refill credits and try again.
                                                         </p>
                                                     </div>
                                                 )}
@@ -1027,15 +1129,16 @@ export default function CampaignRunsClient() {
                                     </div>
                                 )}
 
+                                <RunEventsSection runId={getRunId(selectedRun)} runStatus={selectedRun.status} />
+
                                 <div className="border-t pt-4">
                                     <h4 className="font-medium mb-2">Audience</h4>
                                     <div className="text-sm text-gray-600">Source: {selectedRun.audience?.source?.toUpperCase()}</div>
-                                    {selectedRun.segmentId ? (() => {
-                                        const seg = segments.find((s) => s._id === selectedRun.segmentId);
+                                    {getSegmentIdFromRun(selectedRun) ? (() => {
+                                        const seg = segments.find((s) => s.id === getSegmentIdFromRun(selectedRun));
                                         return (
                                             <div className="text-sm text-gray-600">
-                                                Segment: {seg?.name || selectedRun.segmentId}
-                                                {typeof seg?.audience?.size === "number" ? ` (${seg.audience.size.toLocaleString()})` : ""}
+                                                Segment: {seg?.name || getSegmentIdFromRun(selectedRun)}
                                             </div>
                                         );
                                     })() : (
@@ -1073,7 +1176,7 @@ export default function CampaignRunsClient() {
                                             variant="outline"
                                             className="text-red-600 hover:text-red-700 gap-2"
                                             onClick={() => doAction(selectedRun, "delete")}
-                                            disabled={actionLoadingId === selectedRun._id}
+                                            disabled={actionLoadingId === getRunId(selectedRun)}
                                         >
                                             <Trash2 className="h-4 w-4" />
                                             Delete
@@ -1081,8 +1184,10 @@ export default function CampaignRunsClient() {
                                         <Button
                                             onClick={() => doAction(selectedRun, "schedule")}
                                             disabled={
-                                                actionLoadingId === selectedRun._id ||
-                                                creditsPrecheckLoading
+                                                actionLoadingId === getRunId(selectedRun) ||
+                                                creditsPrecheckLoading ||
+                                                !runEditFireAt ||
+                                                (creditsPrecheck && (Boolean((creditsPrecheck as any)?.segmentReady) === false || Boolean((creditsPrecheck as any)?.canSchedule) === false))
                                             }
                                         >
                                             Schedule
@@ -1098,7 +1203,7 @@ export default function CampaignRunsClient() {
                                             variant="outline"
                                             className="text-red-600 hover:text-red-700"
                                             onClick={() => doAction(selectedRun, "cancel")}
-                                            disabled={actionLoadingId === selectedRun._id}
+                                            disabled={actionLoadingId === getRunId(selectedRun)}
                                         >
                                             Cancel
                                         </Button>
@@ -1108,6 +1213,200 @@ export default function CampaignRunsClient() {
                     )}
                 </DialogContent>
             </Dialog>
+        </div>
+    );
+}
+
+type RunEventItem = {
+    id: string;
+    status: string;
+    attempts?: number;
+    guestId?: string;
+    to?: string;
+    template?: {
+        name?: string;
+        language?: string;
+    };
+    createdAt?: string;
+    updatedAt?: string;
+};
+
+function RunEventsSection(props: { runId: string; runStatus: CampaignRunStatus }) {
+    const { runId, runStatus } = props;
+    const [status, setStatus] = useState<string>("all");
+    const [items, setItems] = useState<RunEventItem[]>([]);
+    const [total, setTotal] = useState<number>(0);
+    const [limit, setLimit] = useState<number>(50);
+    const [skip, setSkip] = useState<number>(0);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const canPoll = runStatus === "scheduled" || runStatus === "running";
+
+    const load = async (next: { status?: string; limit?: number; skip?: number } = {}) => {
+        const nextStatus = next.status ?? status;
+        const nextLimit = next.limit ?? limit;
+        const nextSkip = next.skip ?? skip;
+
+        setLoading(true);
+        setError(null);
+        try {
+            const token = getAuthToken();
+            if (!token) throw new Error("Unauthorized");
+
+            const qs = new URLSearchParams();
+            qs.set("limit", String(nextLimit));
+            qs.set("skip", String(nextSkip));
+            if (nextStatus !== "all") qs.set("status", nextStatus);
+
+            const res = await fetch(`/api/campaign-runs/${encodeURIComponent(runId)}/events?${qs.toString()}`, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const json = await parseJsonSafe(res);
+            if (!res.ok) {
+                const msg = (json as any)?.error || (json as any)?.message || "Failed to load events";
+                throw new Error(msg);
+            }
+
+            const data = (json as any)?.data;
+            const nextItems = Array.isArray(data?.items) ? data.items : [];
+            setItems(nextItems as RunEventItem[]);
+            setTotal(typeof data?.total === "number" ? data.total : 0);
+            setLimit(typeof data?.limit === "number" ? data.limit : nextLimit);
+            setSkip(typeof data?.skip === "number" ? data.skip : nextSkip);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to load events");
+            setItems([]);
+            setTotal(0);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!runId) return;
+        setSkip(0);
+        load({ skip: 0 });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [runId]);
+
+    useEffect(() => {
+        if (!runId) return;
+        setSkip(0);
+        load({ status, skip: 0 });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [status]);
+
+    useEffect(() => {
+        if (!runId) return;
+        if (!canPoll) return;
+        const id = setInterval(() => {
+            load();
+        }, 10000);
+        return () => clearInterval(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [runId, canPoll, status, limit, skip]);
+
+    const canPrev = skip > 0;
+    const canNext = skip + limit < total;
+
+    return (
+        <div className="border-t pt-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+                <h4 className="font-medium">Events</h4>
+                <div className="flex items-center gap-2">
+                    <Select value={status} onValueChange={(v) => setStatus(v)}>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="processing">Processing</SelectItem>
+                            <SelectItem value="sent">Sent</SelectItem>
+                            <SelectItem value="failed">Failed</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
+                        Refresh
+                    </Button>
+                </div>
+            </div>
+
+            {error && (
+                <p className="text-sm text-destructive" role="alert">
+                    {error}
+                </p>
+            )}
+
+            {loading ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                    Loading events...
+                </p>
+            ) : items.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No events found.</p>
+            ) : (
+                <div className="border rounded-md overflow-hidden">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Status</TableHead>
+                                <TableHead>To</TableHead>
+                                <TableHead>Template</TableHead>
+                                <TableHead>Attempts</TableHead>
+                                <TableHead>Updated</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {items.map((ev) => (
+                                <TableRow key={ev.id}>
+                                    <TableCell className="uppercase text-xs">{ev.status}</TableCell>
+                                    <TableCell className="font-mono text-xs">{ev.to || "—"}</TableCell>
+                                    <TableCell className="text-xs">{ev.template?.name || "—"}</TableCell>
+                                    <TableCell className="text-xs">{typeof ev.attempts === "number" ? ev.attempts : "—"}</TableCell>
+                                    <TableCell className="text-xs">{ev.updatedAt ? new Date(ev.updatedAt).toLocaleString() : "—"}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            )}
+
+            <div className="flex items-center justify-between mt-3">
+                <div className="text-xs text-muted-foreground">
+                    {total ? `Showing ${Math.min(skip + 1, total)}-${Math.min(skip + limit, total)} of ${total}` : ""}
+                </div>
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            const nextSkip = Math.max(0, skip - limit);
+                            setSkip(nextSkip);
+                            load({ skip: nextSkip });
+                        }}
+                        disabled={!canPrev || loading}
+                    >
+                        Prev
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            const nextSkip = skip + limit;
+                            setSkip(nextSkip);
+                            load({ skip: nextSkip });
+                        }}
+                        disabled={!canNext || loading}
+                    >
+                        Next
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }

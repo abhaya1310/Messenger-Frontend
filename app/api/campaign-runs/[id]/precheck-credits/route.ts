@@ -28,11 +28,34 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
     const { id } = await ctx.params;
 
     const res = await fetch(`${getBackendBaseUrl()}/api/campaign-runs/${encodeURIComponent(id)}/precheck-credits`, {
-        method: 'GET',
+        method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             ...authHeaders,
         },
+        body: '{}',
+    });
+
+    const data = await parseBackendResponse(res);
+    return NextResponse.json(data, { status: res.status });
+}
+
+export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+    const authHeaders = getUserAuthHeaders(request);
+    if (!authHeaders) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await ctx.params;
+    const bodyText = await request.text();
+
+    const res = await fetch(`${getBackendBaseUrl()}/api/campaign-runs/${encodeURIComponent(id)}/precheck-credits`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders,
+        },
+        body: bodyText || '{}',
     });
 
     const data = await parseBackendResponse(res);

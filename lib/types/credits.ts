@@ -32,6 +32,22 @@ export interface CampaignRunCreditsPrecheck {
     isSufficient: boolean;
     insufficientReason?: CampaignRunCreditsPrecheckInsufficientReason;
     audienceSource: string;
+
+    canSchedule?: boolean;
+    segmentReady?: boolean;
+    reasonCode?: 'SEGMENT_NOT_READY' | 'INSUFFICIENT_CREDITS' | string;
+    requiredCredits?: number;
+    creditsCheck?: {
+        required: number;
+        available: number;
+        isSufficient: boolean;
+        bucket: CreditsBucket;
+    };
+    isUsable?: boolean;
+    segment?: {
+        status?: string;
+        isFresh?: boolean;
+    };
 }
 
 export interface CampaignRunCreditsPrecheckResponse {

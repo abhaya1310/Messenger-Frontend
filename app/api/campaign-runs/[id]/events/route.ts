@@ -7,7 +7,10 @@ function getBackendBaseUrl(): string {
 function getUserAuthHeaders(request: NextRequest): Record<string, string> | null {
     const authorization = request.headers.get('authorization');
     if (!authorization) return null;
-    return { Authorization: authorization };
+
+    return {
+        Authorization: authorization,
+    };
 }
 
 async function parseBackendResponse(res: Response) {
@@ -19,23 +22,24 @@ async function parseBackendResponse(res: Response) {
     }
 }
 
-export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
     const authHeaders = getUserAuthHeaders(request);
     if (!authHeaders) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
 
     const { id } = await ctx.params;
 
-    const bodyText = await request.text();
+    const url = new URL(request.url);
+    const query = url.searchParams.toString();
+    const backendUrl = `${getBackendBaseUrl()}/api/campaign-runs/${encodeURIComponent(id)}/events${query ? `?${query}` : ''}`;
 
-    const res = await fetch(`${getBackendBaseUrl()}/api/campaign-runs/${encodeURIComponent(id)}/schedule`, {
-        method: 'POST',
+    const res = await fetch(backendUrl, {
+        method: 'GET',
         headers: {
             'Content-Type': 'application/json',
             ...authHeaders,
         },
-        body: bodyText,
     });
 
     const data = await parseBackendResponse(res);
