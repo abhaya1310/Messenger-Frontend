@@ -15,9 +15,10 @@ import { Loader2, RefreshCcw, Database, CheckCircle2, AlertCircle } from "lucide
 import { clearAuth, getAuthToken } from "@/lib/auth";
 import { fetchCampaignConfig, fetchOrgSettings, updateUtilityConfig } from "@/lib/api";
 import type { CampaignConfig, UtilityConfig } from "@/lib/types/campaign";
-import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
 import type { OrgSettings } from "@/lib/types/org-settings";
 import type { Order, OrdersListResponse } from "@/lib/types/order";
+import type { FeedbackDefinition, FeedbackDefinitionListResponse } from "@/lib/types/feedback-definition";
+import type { TemplateVariableMappings } from "@/lib/types/template-variable-mapping";
 
 export default function FeedbackPage() {
   const router = useRouter();
@@ -31,9 +32,9 @@ export default function FeedbackPage() {
 
   const [optimisticFeedbackEnabled, setOptimisticFeedbackEnabled] = useState<boolean | null>(null);
 
-  const [campaignDefinitions, setCampaignDefinitions] = useState<CampaignDefinitionSummary[]>([]);
-  const [campaignDefinitionsLoading, setCampaignDefinitionsLoading] = useState(false);
-  const [campaignDefinitionsError, setCampaignDefinitionsError] = useState<string | null>(null);
+  const [feedbackDefinitions, setFeedbackDefinitions] = useState<FeedbackDefinition[]>([]);
+  const [feedbackDefinitionsLoading, setFeedbackDefinitionsLoading] = useState(false);
+  const [feedbackDefinitionsError, setFeedbackDefinitionsError] = useState<string | null>(null);
 
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [orgSettingsLoading, setOrgSettingsLoading] = useState(false);
@@ -47,9 +48,12 @@ export default function FeedbackPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
-  const publishedCampaignDefinitions = useMemo(() => {
-    return (campaignDefinitions || []).slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  }, [campaignDefinitions]);
+  const publishedFeedbackDefinitions = useMemo(() => {
+    return (feedbackDefinitions || [])
+      .filter((d) => String(d.status || "").toLowerCase() === "published")
+      .slice()
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [feedbackDefinitions]);
 
   const [delayMinutesDraft, setDelayMinutesDraft] = useState<string>("");
   const [userInputDraft, setUserInputDraft] = useState<Record<string, string>>({});
@@ -69,43 +73,44 @@ export default function FeedbackPage() {
     }
   };
 
-  const loadCampaignDefinitions = async () => {
-    setCampaignDefinitionsError(null);
-    setCampaignDefinitionsLoading(true);
+  const loadFeedbackDefinitions = async () => {
+    setFeedbackDefinitionsError(null);
+    setFeedbackDefinitionsLoading(true);
     try {
       const token = getAuthToken();
       if (!token) {
-        setCampaignDefinitions([]);
+        setFeedbackDefinitions([]);
         return;
       }
 
-      const res = await fetch("/api/campaign-runs/definitions", {
+      const res = await fetch("/api/feedback-definitions?status=published", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(orgId ? { "X-ORG-ID": orgId } : {}),
         },
       });
 
       if (res.status === 401) {
         clearAuth();
         router.push("/login");
-        setCampaignDefinitions([]);
-        setCampaignDefinitionsError("Session expired. Please login again.");
+        setFeedbackDefinitions([]);
+        setFeedbackDefinitionsError("Session expired. Please login again.");
         return;
       }
 
-      const json = await res.json().catch(() => ({}));
+      const json = (await res.json().catch(() => ({}))) as FeedbackDefinitionListResponse;
       if (!res.ok) {
-        throw new Error((json as any)?.error || (json as any)?.message || "Failed to load campaign definitions");
+        throw new Error((json as any)?.error || (json as any)?.message || "Failed to load feedback definitions");
       }
 
-      const items = ((json as any)?.data || []) as CampaignDefinitionSummary[];
-      setCampaignDefinitions(Array.isArray(items) ? items : []);
+      const items = ((json as any)?.data || []) as FeedbackDefinition[];
+      setFeedbackDefinitions(Array.isArray(items) ? items : []);
     } catch (e) {
-      setCampaignDefinitions([]);
-      setCampaignDefinitionsError(e instanceof Error ? e.message : "Failed to load campaign definitions");
+      setFeedbackDefinitions([]);
+      setFeedbackDefinitionsError(e instanceof Error ? e.message : "Failed to load feedback definitions");
     } finally {
-      setCampaignDefinitionsLoading(false);
+      setFeedbackDefinitionsLoading(false);
     }
   };
 
@@ -235,7 +240,7 @@ export default function FeedbackPage() {
 
   useEffect(() => {
     void loadConfig();
-    void loadCampaignDefinitions();
+    void loadFeedbackDefinitions();
     void loadOrgSettings();
     void loadCapabilities();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -296,16 +301,37 @@ export default function FeedbackPage() {
     }
   };
 
-  const feedbackEnabled = optimisticFeedbackEnabled ?? !!config?.utility?.feedback?.enabled;
   const feedbackDelayMinutes = config?.utility?.feedback?.delayMinutes ?? 60;
-  const feedbackDefinitionId = config?.utility?.feedback?.campaignDefinitionId ?? config?.utility?.feedback?.definitionId ?? "";
+  const feedbackDefinitionId = config?.utility?.feedback?.definitionId ?? config?.utility?.feedback?.campaignDefinitionId ?? "";
 
-  const selectedCampaignDefinition = useMemo(() => {
-    return publishedCampaignDefinitions.find((d) => d._id === feedbackDefinitionId) || null;
-  }, [publishedCampaignDefinitions, feedbackDefinitionId]);
+  const selectedFeedbackDefinition = useMemo(() => {
+    return publishedFeedbackDefinitions.find((d) => d._id === feedbackDefinitionId) || null;
+  }, [publishedFeedbackDefinitions, feedbackDefinitionId]);
+
+  const requiredUserInputKeys = useMemo(() => {
+    const mappings = ((selectedFeedbackDefinition as any)?.templateVariableMappings || {}) as TemplateVariableMappings;
+    const keys = Object.keys(mappings || {}).filter((k) => (mappings as any)?.[k]?.source === "static");
+    return keys
+      .map((k) => Number(k))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b)
+      .map((n) => String(n));
+  }, [selectedFeedbackDefinition]);
+
+  const isFeedbackConfigured = useMemo(() => {
+    if (!feedbackDefinitionId) return false;
+    if (!Number.isFinite(feedbackDelayMinutes) || feedbackDelayMinutes <= 0) return false;
+    for (const k of requiredUserInputKeys) {
+      const v = String((userInputDraft as any)?.[k] ?? "").trim();
+      if (!v) return false;
+    }
+    return true;
+  }, [feedbackDefinitionId, feedbackDelayMinutes, requiredUserInputKeys, userInputDraft]);
+
+  const feedbackEnabled = optimisticFeedbackEnabled ?? (!!config?.utility?.feedback?.enabled && isFeedbackConfigured);
 
   const feedbackParamKeys = useMemo(() => {
-    const sample = ((selectedCampaignDefinition as any)?.template?.preview?.sampleValues || {}) as Record<string, string>;
+    const sample = ((selectedFeedbackDefinition as any)?.template?.preview?.sampleValues || {}) as Record<string, string>;
     const existing = (userInputDraft || {}) as Record<string, string>;
     const keys = Array.from(new Set([...Object.keys(sample), ...Object.keys(existing)]));
     return keys
@@ -313,17 +339,17 @@ export default function FeedbackPage() {
       .filter((n) => Number.isFinite(n))
       .sort((a, b) => a - b)
       .map((n) => String(n));
-  }, [selectedCampaignDefinition, userInputDraft]);
+  }, [selectedFeedbackDefinition, userInputDraft]);
 
   const selectedDefinitionName = useMemo(() => {
-    const match = publishedCampaignDefinitions.find((d) => d._id === feedbackDefinitionId);
+    const match = publishedFeedbackDefinitions.find((d) => d._id === feedbackDefinitionId);
     return match?.name || "";
-  }, [publishedCampaignDefinitions, feedbackDefinitionId]);
+  }, [publishedFeedbackDefinitions, feedbackDefinitionId]);
 
   const posEnabled = !!posIntegrationEnabled;
 
   const refreshAll = async () => {
-    await Promise.all([loadConfig(), loadCampaignDefinitions(), loadOrgSettings(), loadCapabilities()]);
+    await Promise.all([loadConfig(), loadFeedbackDefinitions(), loadOrgSettings(), loadCapabilities()]);
     const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
     if (posEnabled) {
       await loadOrdersTodayCount(tz);
@@ -376,6 +402,11 @@ export default function FeedbackPage() {
                 checked={feedbackEnabled}
                 onCheckedChange={(checked) => {
                   if (!config) return;
+                  if (checked && !isFeedbackConfigured) {
+                    setError("Please complete setup (select a feedback template, delay, and required parameters) before enabling.");
+                    setOptimisticFeedbackEnabled(false);
+                    return;
+                  }
                   const previous = !!config.utility.feedback.enabled;
                   setOptimisticFeedbackEnabled(checked);
                   void (async () => {
@@ -383,14 +414,24 @@ export default function FeedbackPage() {
                       await handleUtilityUpdate({
                         feedback: { ...config.utility.feedback, enabled: checked },
                       }, { background: true });
-                    } catch {
+                    } catch (e: any) {
                       setOptimisticFeedbackEnabled(previous);
+                      const reasonCode = e?.reasonCode;
+                      const status = e?.status;
+                      const details = e?.details;
+                      if (status === 400 && typeof reasonCode === "string" && reasonCode.startsWith("FEEDBACK_")) {
+                        const missing = (details as any)?.missingPositions;
+                        const suffix = Array.isArray(missing) && missing.length > 0 ? ` Missing: ${missing.join(", ")}` : "";
+                        setError(`${e?.message || reasonCode}${suffix}`);
+                      } else {
+                        setError(e instanceof Error ? e.message : "Failed to update feedback configuration");
+                      }
                     } finally {
                       setOptimisticFeedbackEnabled(null);
                     }
                   })();
                 }}
-                disabled={loadingConfig || !config}
+                disabled={savingToggle || !config}
               />
             </div>
 
@@ -432,48 +473,48 @@ export default function FeedbackPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-500">Campaign definition *</Label>
+                  <Label className="text-xs text-gray-500">Feedback template *</Label>
                   <Select
                     value={feedbackDefinitionId}
                     onValueChange={(v) => {
                       if (!v || !config) return;
                       void handleUtilityUpdate({
-                        feedback: { ...config.utility.feedback, enabled: true, campaignDefinitionId: v },
+                        feedback: { ...config.utility.feedback, definitionId: v, campaignDefinitionId: v },
                       });
                     }}
-                    disabled={saving || campaignDefinitionsLoading || !config}
+                    disabled={saving || feedbackDefinitionsLoading || !config}
                   >
                     <SelectTrigger className="bg-white">
                       <SelectValue
                         placeholder={
-                          campaignDefinitionsLoading
+                          feedbackDefinitionsLoading
                             ? "Loading definitions..."
-                            : publishedCampaignDefinitions.length === 0
-                              ? "No campaign definitions"
-                              : "Select a campaign"
+                            : publishedFeedbackDefinitions.length === 0
+                              ? "No feedback templates"
+                              : "Select a feedback template"
                         }
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {publishedCampaignDefinitions.map((d) => (
+                      {publishedFeedbackDefinitions.map((d) => (
                         <SelectItem key={d._id} value={d._id}>
                           {d.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {campaignDefinitionsError ? (
+                  {feedbackDefinitionsError ? (
                     <p className="text-xs text-red-600" role="alert">
-                      {campaignDefinitionsError}
+                      {feedbackDefinitionsError}
                     </p>
                   ) : null}
                 </div>
 
-                {selectedCampaignDefinition ? (
+                {selectedFeedbackDefinition ? (
                   <div className="space-y-3 rounded-xl border border-gray-200 p-4">
                     <div className="text-sm font-medium">Template preview</div>
                     <div className="text-sm text-muted-foreground">
-                      {String((selectedCampaignDefinition as any)?.template?.preview?.message || "Preview not available")}
+                      {String((selectedFeedbackDefinition as any)?.template?.preview?.message || "Preview not available")}
                     </div>
 
                     {feedbackParamKeys.length > 0 ? (
@@ -489,7 +530,7 @@ export default function FeedbackPage() {
                                   const v = e.target.value;
                                   setUserInputDraft((prev) => ({ ...prev, [k]: v }));
                                 }}
-                                placeholder={String(((selectedCampaignDefinition as any)?.template?.preview?.sampleValues || {})?.[k] ?? "")}
+                                placeholder={String(((selectedFeedbackDefinition as any)?.template?.preview?.sampleValues || {})?.[k] ?? "")}
                               />
                             </div>
                           ))}
@@ -502,7 +543,7 @@ export default function FeedbackPage() {
                               void handleUtilityUpdate({
                                 feedback: {
                                   ...config.utility.feedback,
-                                  enabled: true,
+                                  definitionId: feedbackDefinitionId,
                                   campaignDefinitionId: feedbackDefinitionId,
                                   userInputParameters: userInputDraft,
                                 },
@@ -515,6 +556,17 @@ export default function FeedbackPage() {
                         </div>
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+
+                {!isFeedbackConfigured && (config?.utility?.feedback?.enabled || optimisticFeedbackEnabled) ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 mt-0.5" />
+                      <div>
+                        Feedback is enabled in settings, but setup is incomplete. Complete setup above to start sending messages.
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>

@@ -46,6 +46,8 @@ export default function MonitorPage() {
   const [selectedConversation, setSelectedConversation] = useState<ConversationListItem | null>(null);
   const [messages, setMessages] = useState<MessageBubble[]>([]);
   const [filters, setFilters] = useState<ConversationFilters>({});
+  const [monitorError, setMonitorError] = useState<string | null>(null);
+  const [orgNoWhatsapp, setOrgNoWhatsapp] = useState(false);
   const [loading, setLoading] = useState({
     conversations: false,
     messages: false,
@@ -96,12 +98,15 @@ export default function MonitorPage() {
     setLoading(prev => ({ ...prev, conversations: true }));
 
     try {
+      setMonitorError(null);
       const skip = reset ? 0 : pagination.conversations.skip;
       const response = await fetchConversations({
         ...filters,
         limit: pagination.conversations.limit,
         skip
       });
+
+      setOrgNoWhatsapp(false);
 
       // Deduplicate conversations before setting state
       const deduplicatedNew = deduplicateConversations(response.conversations);
@@ -125,6 +130,23 @@ export default function MonitorPage() {
         }
       }));
     } catch (error) {
+      const e: any = error;
+      const reasonCode = e?.reasonCode;
+      const status = e?.status;
+
+      if (status === 409 && reasonCode === 'ORG_NO_WHATSAPP_NUMBER') {
+        setOrgNoWhatsapp(true);
+        setConversations([]);
+        setSelectedConversation(null);
+        setMessages([]);
+        setPagination(prev => ({
+          ...prev,
+          conversations: { ...prev.conversations, skip: 0, hasMore: false },
+        }));
+        return;
+      }
+
+      setMonitorError(e?.message || 'Failed to load conversations');
       console.error('Failed to load conversations:', error);
     } finally {
       setLoading(prev => ({ ...prev, conversations: false }));
@@ -138,6 +160,7 @@ export default function MonitorPage() {
     setLoading(prev => ({ ...prev, messages: true }));
 
     try {
+      setMonitorError(null);
       const conversation = conversations.find(c => c._id === conversationId);
       if (!conversation) return;
 
@@ -146,6 +169,8 @@ export default function MonitorPage() {
         limit: pagination.messages.limit,
         skip
       });
+
+      setOrgNoWhatsapp(false);
 
       if (reset) {
         setMessages(response.messages);
@@ -162,6 +187,25 @@ export default function MonitorPage() {
         }
       }));
     } catch (error) {
+      const e: any = error;
+      const reasonCode = e?.reasonCode;
+      const status = e?.status;
+
+      if (status === 409 && reasonCode === 'ORG_NO_WHATSAPP_NUMBER') {
+        setOrgNoWhatsapp(true);
+        setSelectedConversation(null);
+        setMessages([]);
+        return;
+      }
+
+      if (status === 403) {
+        setMonitorError(e?.message || 'You do not have access to this conversation.');
+        setSelectedConversation(null);
+        setMessages([]);
+        return;
+      }
+
+      setMonitorError(e?.message || 'Failed to load messages');
       console.error('Failed to load messages:', error);
     } finally {
       setLoading(prev => ({ ...prev, messages: false }));
@@ -215,7 +259,10 @@ export default function MonitorPage() {
     setLoading(prev => ({ ...prev, updating: true }));
 
     try {
+      setMonitorError(null);
       await updateConversationMetadata(selectedConversation.clientPhoneNumber, metadata);
+
+      setOrgNoWhatsapp(false);
 
       // Update local state
       setSelectedConversation(prev => prev ? {
@@ -233,6 +280,22 @@ export default function MonitorPage() {
         return deduplicateConversations(updated);
       });
     } catch (error) {
+      const e: any = error;
+      const reasonCode = e?.reasonCode;
+      const status = e?.status;
+      if (status === 409 && reasonCode === 'ORG_NO_WHATSAPP_NUMBER') {
+        setOrgNoWhatsapp(true);
+        setSelectedConversation(null);
+        setMessages([]);
+        return;
+      }
+      if (status === 403) {
+        setMonitorError(e?.message || 'You do not have access to update this conversation.');
+        setSelectedConversation(null);
+        setMessages([]);
+        return;
+      }
+      setMonitorError(e?.message || 'Failed to update metadata');
       console.error('Failed to update metadata:', error);
     } finally {
       setLoading(prev => ({ ...prev, updating: false }));
@@ -293,11 +356,27 @@ export default function MonitorPage() {
           skip: 0
         });
 
+        setOrgNoWhatsapp(false);
+
         // Check if we have new messages
         if (response.messages.length > messagesLengthRef.current) {
           setMessages(response.messages);
         }
       } catch (error) {
+        const e: any = error;
+        const reasonCode = e?.reasonCode;
+        const status = e?.status;
+        if (status === 409 && reasonCode === 'ORG_NO_WHATSAPP_NUMBER') {
+          setOrgNoWhatsapp(true);
+          setSelectedConversation(null);
+          setMessages([]);
+          return;
+        }
+        if (status === 403) {
+          setSelectedConversation(null);
+          setMessages([]);
+          return;
+        }
         console.error('Failed to poll messages:', error);
       }
     };
@@ -367,6 +446,16 @@ export default function MonitorPage() {
         </div>
       </div>
 
+      {orgNoWhatsapp ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          This organization has no WhatsApp phone number configured. Please add a phone number to view conversations.
+        </div>
+      ) : monitorError ? (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {monitorError}
+        </div>
+      ) : null}
+
       {/* Filters */}
       {showFilters && (
         <div className="bg-white border-b border-gray-200 p-4">
@@ -424,7 +513,11 @@ export default function MonitorPage() {
                   <div className="text-center">
                     <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-400" />
                     <h3 className="text-lg font-medium mb-2">Select a conversation</h3>
-                    <p className="text-sm">Choose a conversation from the list to view messages</p>
+                    <p className="text-sm">
+                      {orgNoWhatsapp
+                        ? "No WhatsApp phone number configured for this organization"
+                        : "Choose a conversation from the list to view messages"}
+                    </p>
                   </div>
                 </div>
               )}

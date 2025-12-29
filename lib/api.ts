@@ -61,6 +61,41 @@ async function fetchWithErrorHandling(
   }
 }
 
+type ApiError = Error & {
+  status?: number;
+  reasonCode?: string;
+  details?: unknown;
+  payload?: unknown;
+};
+
+async function parseJsonSafe(res: Response): Promise<unknown> {
+  const text = await res.text().catch(() => "");
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function toApiError(res: Response, payload: unknown, fallbackMessage: string): ApiError {
+  const p: any = payload;
+  const reasonCode = p?.reasonCode || p?.error?.code || p?.errorCode;
+  const message =
+    p?.error?.message ||
+    p?.message ||
+    (typeof p?.error === "string" ? p.error : undefined) ||
+    (typeof reasonCode === "string" ? reasonCode : undefined) ||
+    fallbackMessage;
+
+  const err = new Error(message) as ApiError;
+  err.status = res.status;
+  err.reasonCode = reasonCode;
+  err.details = p?.error?.details || p?.details;
+  err.payload = payload;
+  return err;
+}
+
 export interface Template {
   name: string;
   status: 'APPROVED' | 'PENDING' | 'REJECTED' | 'DISABLED';
@@ -501,9 +536,13 @@ export async function fetchConversations(params: {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
-  const res = await fetchWithErrorHandling(url.toString(), { headers });
+  const res = await fetch(url.toString(), { headers });
+  const payload = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw toApiError(res, payload, 'Failed to load conversations');
+  }
 
-  const data: ConversationsResponse = await res.json();
+  const data: ConversationsResponse = payload as ConversationsResponse;
 
   // Defensive deduplication: remove duplicates by _id
   if (data.conversations && Array.isArray(data.conversations)) {
@@ -549,9 +588,13 @@ export async function fetchConversationMessages(
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
-  const res = await fetchWithErrorHandling(url.toString(), { headers });
+  const res = await fetch(url.toString(), { headers });
+  const payload = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw toApiError(res, payload, 'Failed to load messages');
+  }
 
-  return res.json();
+  return payload as ConversationHistoryResponse;
 }
 
 export async function updateConversationMetadata(
@@ -574,15 +617,20 @@ export async function updateConversationMetadata(
     'Content-Type': 'application/json',
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (!token && orgId) headers['X-ORG-ID'] = orgId;
+  if (orgId) headers['X-ORG-ID'] = orgId;
 
-  const res = await fetchWithErrorHandling(`${API_BASE}/conversations/${encodeURIComponent(phoneNumber)}/metadata`, {
+  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(phoneNumber)}/metadata`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify(metadata),
   });
 
-  return res.json();
+  const payload = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw toApiError(res, payload, 'Failed to update metadata');
+  }
+
+  return payload as Conversation;
 }
 
 export async function sendTextMessage(
@@ -1004,11 +1052,44 @@ export async function deleteFestival(id: string): Promise<FestivalConfig[]> {
  * Update utility messaging configuration
  */
 export async function updateUtilityConfig(updates: Partial<UtilityConfig>): Promise<UtilityConfig> {
-  const response = await apiClient<{ success: boolean; data: UtilityConfig }>('/api/campaign-config/utility', {
+  if (typeof window === 'undefined') {
+    throw new Error('updateUtilityConfig can only be called from the client side');
+  }
+
+  const payloadUpdates: any = structuredClone(updates as any);
+  const fb = payloadUpdates?.feedback;
+  if (fb && typeof fb === 'object') {
+    if (!fb.campaignDefinitionId && fb.definitionId) {
+      fb.campaignDefinitionId = fb.definitionId;
+    }
+    if ('definitionId' in fb) {
+      delete fb.definitionId;
+    }
+  }
+
+  const orgId = getCurrentOrgId();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (orgId) headers['X-ORG-ID'] = orgId;
+
+  const res = await fetch(`${API_BASE}/api/campaign-config`, {
     method: 'PATCH',
-    body: JSON.stringify(updates),
+    headers,
+    body: JSON.stringify({ utility: payloadUpdates }),
   });
-  return response.data;
+
+  const payload = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw toApiError(res, payload, 'Failed to update config');
+  }
+
+  const p: any = payload;
+  const data = p?.data;
+  const utility = data?.utility ?? data;
+  return utility as UtilityConfig;
 }
 
 /**

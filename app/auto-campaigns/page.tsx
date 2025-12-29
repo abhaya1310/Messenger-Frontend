@@ -1066,10 +1066,10 @@ export default function AutoCampaignsPage() {
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Feedback template *</Label>
                       <Select
-                        value={config.utility.feedback.campaignDefinitionId || config.utility.feedback.definitionId || ""}
+                        value={config.utility.feedback.definitionId || config.utility.feedback.campaignDefinitionId || ""}
                         onValueChange={(v) =>
                           handleUtilityUpdate({
-                            feedback: { ...config.utility.feedback, campaignDefinitionId: v },
+                            feedback: { ...config.utility.feedback, definitionId: v, campaignDefinitionId: v },
                           })
                         }
                         disabled={saving === "utility" || feedbackDefinitionsLoading}
