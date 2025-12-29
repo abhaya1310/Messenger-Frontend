@@ -55,6 +55,8 @@ export default function FeedbackPage() {
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [feedbackDefinitions]);
 
+  const MIN_FEEDBACK_DELAY_MINUTES = 15;
+
   const [delayMinutesDraft, setDelayMinutesDraft] = useState<string>("");
   const [userInputDraft, setUserInputDraft] = useState<Record<string, string>>({});
 
@@ -256,7 +258,12 @@ export default function FeedbackPage() {
 
     const existing = ((config as any)?.utility?.feedback?.userInputParameters || {}) as Record<string, string>;
     setUserInputDraft(existing && typeof existing === "object" ? existing : {});
-  }, [config?.utility?.feedback?.delayMinutes]);
+  }, [
+    config?.utility?.feedback?.delayMinutes,
+    config?.utility?.feedback?.campaignDefinitionId,
+    (config as any)?.utility?.feedback?.definitionId,
+    config?.utility?.feedback?.userInputParameters,
+  ]);
 
   useEffect(() => {
     const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
@@ -283,6 +290,10 @@ export default function FeedbackPage() {
       setConfig({ ...config, utility: updated });
       if (!background) setSavedMessage("Saved");
     } catch (e) {
+      const err: any = e;
+      const reasonCode = err?.reasonCode;
+      const status = err?.status;
+      const details = err?.details;
       const msg = e instanceof Error ? e.message : "";
       if (msg.includes("401") || msg.toLowerCase().includes("unauthorized")) {
         clearAuth();
@@ -290,7 +301,15 @@ export default function FeedbackPage() {
         if (!background) setError("Session expired. Please login again.");
         throw e;
       }
-      if (!background) setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
+      if (!background) {
+        if (status === 400 && typeof reasonCode === "string" && reasonCode.startsWith("FEEDBACK_")) {
+          const missing = (details as any)?.missingPositions;
+          const suffix = Array.isArray(missing) && missing.length > 0 ? ` Missing: ${missing.join(", ")}` : "";
+          setError(`${err?.message || reasonCode}${suffix}`);
+        } else {
+          setError(e instanceof Error ? e.message : "Failed to save feedback configuration");
+        }
+      }
       throw e;
     } finally {
       if (background) {
@@ -320,13 +339,13 @@ export default function FeedbackPage() {
 
   const isFeedbackConfigured = useMemo(() => {
     if (!feedbackDefinitionId) return false;
-    if (!Number.isFinite(feedbackDelayMinutes) || feedbackDelayMinutes <= 0) return false;
+    if (!Number.isFinite(feedbackDelayMinutes) || feedbackDelayMinutes < MIN_FEEDBACK_DELAY_MINUTES) return false;
     for (const k of requiredUserInputKeys) {
       const v = String((userInputDraft as any)?.[k] ?? "").trim();
       if (!v) return false;
     }
     return true;
-  }, [feedbackDefinitionId, feedbackDelayMinutes, requiredUserInputKeys, userInputDraft]);
+  }, [feedbackDefinitionId, feedbackDelayMinutes, requiredUserInputKeys, userInputDraft, MIN_FEEDBACK_DELAY_MINUTES]);
 
   const feedbackEnabled = optimisticFeedbackEnabled ?? (!!config?.utility?.feedback?.enabled && isFeedbackConfigured);
 
@@ -402,6 +421,7 @@ export default function FeedbackPage() {
                 checked={feedbackEnabled}
                 onCheckedChange={(checked) => {
                   if (!config) return;
+                  setError(null);
                   if (checked && !isFeedbackConfigured) {
                     setError("Please complete setup (select a feedback template, delay, and required parameters) before enabling.");
                     setOptimisticFeedbackEnabled(false);
@@ -439,17 +459,20 @@ export default function FeedbackPage() {
               <div className="flex items-center justify-center py-6">
                 <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
               </div>
-            ) : feedbackEnabled ? (
+            ) : config ? (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-xs text-gray-500">Delay after transaction (minutes)</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
-                      min={1}
+                      min={MIN_FEEDBACK_DELAY_MINUTES}
                       max={1440}
                       value={delayMinutesDraft}
-                      onChange={(e) => setDelayMinutesDraft(e.target.value)}
+                      onChange={(e) => {
+                        setError(null);
+                        setDelayMinutesDraft(e.target.value);
+                      }}
                       disabled={saving || !config}
                     />
                     <Button
@@ -457,8 +480,8 @@ export default function FeedbackPage() {
                       onClick={() => {
                         if (!config) return;
                         const next = Number.parseInt(String(delayMinutesDraft || "").trim(), 10);
-                        if (!Number.isFinite(next) || next <= 0) {
-                          setError("Please enter a valid delay in minutes.");
+                        if (!Number.isFinite(next) || next < MIN_FEEDBACK_DELAY_MINUTES || next > 1440) {
+                          setError(`Please enter a valid delay (min ${MIN_FEEDBACK_DELAY_MINUTES} minutes).`);
                           return;
                         }
                         void handleUtilityUpdate({
@@ -470,6 +493,7 @@ export default function FeedbackPage() {
                       Save
                     </Button>
                   </div>
+                  <p className="text-xs text-gray-500">Minimum delay is {MIN_FEEDBACK_DELAY_MINUTES} minutes.</p>
                 </div>
 
                 <div className="space-y-2">
@@ -478,6 +502,7 @@ export default function FeedbackPage() {
                     value={feedbackDefinitionId}
                     onValueChange={(v) => {
                       if (!v || !config) return;
+                      setError(null);
                       void handleUtilityUpdate({
                         feedback: { ...config.utility.feedback, definitionId: v, campaignDefinitionId: v },
                       });
@@ -528,6 +553,7 @@ export default function FeedbackPage() {
                                 value={String(userInputDraft?.[k] ?? "")}
                                 onChange={(e) => {
                                   const v = e.target.value;
+                                  setError(null);
                                   setUserInputDraft((prev) => ({ ...prev, [k]: v }));
                                 }}
                                 placeholder={String(((selectedFeedbackDefinition as any)?.template?.preview?.sampleValues || {})?.[k] ?? "")}
@@ -540,6 +566,7 @@ export default function FeedbackPage() {
                             variant="outline"
                             onClick={() => {
                               if (!config) return;
+                              setError(null);
                               void handleUtilityUpdate({
                                 feedback: {
                                   ...config.utility.feedback,
@@ -572,7 +599,7 @@ export default function FeedbackPage() {
               </div>
             ) : (
               <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
-                Enable feedback to start sending automated feedback requests.
+                Unable to load configuration. Please refresh.
               </div>
             )}
           </CardContent>
@@ -683,6 +710,6 @@ export default function FeedbackPage() {
           </CardContent>
         </Card>
       </section>
-    </div>
+    </div >
   );
 }
