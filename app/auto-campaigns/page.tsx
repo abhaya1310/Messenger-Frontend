@@ -1048,35 +1048,28 @@ export default function AutoCampaignsPage() {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Delay after transaction (minutes)</Label>
-                      <Select
-                        value={config.utility.feedback.delayMinutes.toString()}
-                        onValueChange={(v) =>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={1440}
+                        value={String(config.utility.feedback.delayMinutes ?? 60)}
+                        onChange={(e) => {
+                          const next = Number.parseInt(String(e.target.value || "").trim(), 10);
+                          if (!Number.isFinite(next)) return;
                           handleUtilityUpdate({
-                            feedback: { ...config.utility.feedback, delayMinutes: parseInt(v) },
-                          })
-                        }
-                      >
-                        <SelectTrigger className="bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="15">15 minutes</SelectItem>
-                          <SelectItem value="30">30 minutes</SelectItem>
-                          <SelectItem value="60">1 hour</SelectItem>
-                          <SelectItem value="120">2 hours</SelectItem>
-                          <SelectItem value="240">4 hours</SelectItem>
-                          <SelectItem value="1440">24 hours</SelectItem>
-                        </SelectContent>
-                      </Select>
+                            feedback: { ...config.utility.feedback, delayMinutes: next },
+                          });
+                        }}
+                      />
                     </div>
 
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Feedback template *</Label>
                       <Select
-                        value={config.utility.feedback.definitionId || ""}
+                        value={config.utility.feedback.campaignDefinitionId || config.utility.feedback.definitionId || ""}
                         onValueChange={(v) =>
                           handleUtilityUpdate({
-                            feedback: { ...config.utility.feedback, definitionId: v },
+                            feedback: { ...config.utility.feedback, campaignDefinitionId: v },
                           })
                         }
                         disabled={saving === "utility" || feedbackDefinitionsLoading}

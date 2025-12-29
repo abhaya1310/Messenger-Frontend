@@ -278,43 +278,65 @@ export default function CampaignRunsClient() {
                 ...(orgId ? { "X-ORG-ID": orgId } : {}),
             };
 
-            const [capRes, defsRes, runsRes] = await Promise.all([
+            const runsQs = new URLSearchParams();
+            runsQs.set("limit", "50");
+            runsQs.set("skip", "0");
+            if (statusFilter !== "all") runsQs.set("status", statusFilter);
+
+            const [capResS, defsResS, runsResS] = await Promise.allSettled([
                 fetch("/api/campaign-runs/capabilities", { headers }),
                 fetch("/api/campaign-runs/definitions", { headers }),
-                fetch(
-                    `/api/campaign-runs${statusFilter !== "all" ? `?status=${encodeURIComponent(statusFilter)}` : ""
-                    }`,
-                    { headers }
-                ),
+                fetch(`/api/campaign-runs?${runsQs.toString()}`, { headers }),
             ]);
 
-            const capJson = await parseJsonSafe(capRes);
-            if (!capRes.ok) {
-                const msg = (capJson as any)?.error || (capJson as any)?.message || "Failed to load capabilities";
-                throw new Error(msg);
-            }
-            setPosEnabled(!!(capJson as any)?.data?.posIntegrationEnabled);
+            const warnings: string[] = [];
 
-            const defsJson = await parseJsonSafe(defsRes);
-            if (!defsRes.ok) {
-                const msg = (defsJson as any)?.error || (defsJson as any)?.message || "Failed to load catalog";
-                throw new Error(msg);
+            if (capResS.status === "fulfilled") {
+                const capRes = capResS.value;
+                const capJson = await parseJsonSafe(capRes);
+                if (capRes.ok) {
+                    setPosEnabled(!!(capJson as any)?.data?.posIntegrationEnabled);
+                } else {
+                    warnings.push((capJson as any)?.error || (capJson as any)?.message || "Capabilities unavailable");
+                }
+            } else {
+                warnings.push("Capabilities unavailable");
             }
-            setDefinitions(((defsJson as any)?.data || []) as CampaignDefinitionSummary[]);
 
-            const runsJson = await parseJsonSafe(runsRes);
-            if (!runsRes.ok) {
-                const msg = (runsJson as any)?.error || (runsJson as any)?.message || "Failed to load campaign runs";
-                throw new Error(msg);
+            if (defsResS.status === "fulfilled") {
+                const defsRes = defsResS.value;
+                const defsJson = await parseJsonSafe(defsRes);
+                if (defsRes.ok) {
+                    setDefinitions(((defsJson as any)?.data || []) as CampaignDefinitionSummary[]);
+                } else {
+                    warnings.push((defsJson as any)?.error || (defsJson as any)?.message || "Catalog unavailable");
+                }
+            } else {
+                warnings.push("Catalog unavailable");
             }
-            const raw = (runsJson as any)?.data;
-            const items =
-                (Array.isArray(raw?.items) ? raw.items : null) ??
-                (Array.isArray(raw) ? raw : null) ??
-                ((runsJson as any)?.campaigns && Array.isArray((runsJson as any)?.campaigns) ? (runsJson as any)?.campaigns : null) ??
-                ((runsJson as any)?.runs && Array.isArray((runsJson as any)?.runs) ? (runsJson as any)?.runs : null) ??
-                [];
-            setRuns(items as CampaignRun[]);
+
+            if (runsResS.status === "fulfilled") {
+                const runsRes = runsResS.value;
+                const runsJson = await parseJsonSafe(runsRes);
+                if (!runsRes.ok) {
+                    const msg = (runsJson as any)?.error || (runsJson as any)?.message || "Failed to load campaign runs";
+                    throw new Error(msg);
+                }
+                const raw = (runsJson as any)?.data;
+                const items =
+                    (Array.isArray(raw?.items) ? raw.items : null) ??
+                    (Array.isArray(raw) ? raw : null) ??
+                    ((runsJson as any)?.campaigns && Array.isArray((runsJson as any)?.campaigns) ? (runsJson as any)?.campaigns : null) ??
+                    ((runsJson as any)?.runs && Array.isArray((runsJson as any)?.runs) ? (runsJson as any)?.runs : null) ??
+                    [];
+                setRuns(items as CampaignRun[]);
+            } else {
+                throw new Error("Failed to load campaign runs");
+            }
+
+            if (warnings.length > 0) {
+                setError(warnings.join("\n"));
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load campaign runs");
         } finally {
@@ -427,6 +449,11 @@ export default function CampaignRunsClient() {
             setShowCreate(false);
             setSelectedRun(created);
             setRuns((prev) => [created, ...prev]);
+            if (statusFilter !== "all") {
+                setStatusFilter("all");
+            } else {
+                await loadAll();
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to create run");
         } finally {
@@ -456,7 +483,7 @@ export default function CampaignRunsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
-            const res = await fetch(`/api/campaign-runs/${encodeURIComponent(selectedRun._id)}`, {
+            const res = await fetch(`/api/campaign-runs/${encodeURIComponent(getRunId(selectedRun))}`, {
                 method: "PATCH",
                 headers: {
                     "Content-Type": "application/json",
@@ -479,7 +506,7 @@ export default function CampaignRunsClient() {
 
             const updated = (data as any)?.data as CampaignRun;
             setSelectedRun(updated);
-            setRuns((prev) => prev.map((r) => (r._id === updated._id ? updated : r)));
+            setRuns((prev) => prev.map((r) => (getRunId(r) === getRunId(updated) ? updated : r)));
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to update run");
         } finally {
@@ -569,7 +596,11 @@ export default function CampaignRunsClient() {
             }
 
             if (action !== "delete") {
-                await loadAll();
+                if (action === "schedule" && statusFilter !== "all") {
+                    setStatusFilter("all");
+                } else {
+                    await loadAll();
+                }
             }
         } catch (e) {
             setError(e instanceof Error ? e.message : "Action failed");

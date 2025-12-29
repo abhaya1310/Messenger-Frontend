@@ -10,23 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/components/auth-provider";
 import { Loader2, RefreshCcw, Database, CheckCircle2, AlertCircle } from "lucide-react";
 import { clearAuth, getAuthToken } from "@/lib/auth";
 import { fetchCampaignConfig, fetchOrgSettings, updateUtilityConfig } from "@/lib/api";
 import type { CampaignConfig, UtilityConfig } from "@/lib/types/campaign";
+import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
 import type { OrgSettings } from "@/lib/types/org-settings";
 import type { Order, OrdersListResponse } from "@/lib/types/order";
-import type { FeedbackDefinitionSingleResponse } from "@/lib/types/feedback-definition";
-import type { TemplateVariableMappings } from "@/lib/types/template-variable-mapping";
-import { MessagePreview } from "@/components/message-preview";
-
-type FeedbackDefinitionListItem = {
-  _id: string;
-  name: string;
-  status?: string;
-};
 
 export default function FeedbackPage() {
   const router = useRouter();
@@ -40,9 +31,9 @@ export default function FeedbackPage() {
 
   const [optimisticFeedbackEnabled, setOptimisticFeedbackEnabled] = useState<boolean | null>(null);
 
-  const [feedbackDefinitions, setFeedbackDefinitions] = useState<FeedbackDefinitionListItem[]>([]);
-  const [feedbackDefinitionsLoading, setFeedbackDefinitionsLoading] = useState(false);
-  const [feedbackDefinitionsError, setFeedbackDefinitionsError] = useState<string | null>(null);
+  const [campaignDefinitions, setCampaignDefinitions] = useState<CampaignDefinitionSummary[]>([]);
+  const [campaignDefinitionsLoading, setCampaignDefinitionsLoading] = useState(false);
+  const [campaignDefinitionsError, setCampaignDefinitionsError] = useState<string | null>(null);
 
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [orgSettingsLoading, setOrgSettingsLoading] = useState(false);
@@ -56,20 +47,12 @@ export default function FeedbackPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [pendingDefinitionId, setPendingDefinitionId] = useState<string>("");
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewData, setPreviewData] = useState<FeedbackDefinitionSingleResponse["data"] | null>(null);
+  const publishedCampaignDefinitions = useMemo(() => {
+    return (campaignDefinitions || []).slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [campaignDefinitions]);
 
-  const [previewUserInputs, setPreviewUserInputs] = useState<Record<string, string>>({});
-
-  const publishedFeedbackDefinitions = useMemo(() => {
-    return feedbackDefinitions
-      .filter((d) => String(d.status || "").toLowerCase() === "published" || !d.status)
-      .slice()
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  }, [feedbackDefinitions]);
+  const [delayMinutesDraft, setDelayMinutesDraft] = useState<string>("");
+  const [userInputDraft, setUserInputDraft] = useState<Record<string, string>>({});
 
   const loadConfig = async () => {
     setError(null);
@@ -83,6 +66,46 @@ export default function FeedbackPage() {
       setError(e instanceof Error ? e.message : "Failed to load feedback configuration");
     } finally {
       setLoadingConfig(false);
+    }
+  };
+
+  const loadCampaignDefinitions = async () => {
+    setCampaignDefinitionsError(null);
+    setCampaignDefinitionsLoading(true);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        setCampaignDefinitions([]);
+        return;
+      }
+
+      const res = await fetch("/api/campaign-runs/definitions", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.status === 401) {
+        clearAuth();
+        router.push("/login");
+        setCampaignDefinitions([]);
+        setCampaignDefinitionsError("Session expired. Please login again.");
+        return;
+      }
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((json as any)?.error || (json as any)?.message || "Failed to load campaign definitions");
+      }
+
+      const items = ((json as any)?.data || []) as CampaignDefinitionSummary[];
+      setCampaignDefinitions(Array.isArray(items) ? items : []);
+    } catch (e) {
+      setCampaignDefinitions([]);
+      setCampaignDefinitionsError(e instanceof Error ? e.message : "Failed to load campaign definitions");
+    } finally {
+      setCampaignDefinitionsLoading(false);
     }
   };
 
@@ -210,54 +233,25 @@ export default function FeedbackPage() {
     }
   };
 
-  const loadFeedbackDefinitions = async () => {
-    setFeedbackDefinitionsError(null);
-    setFeedbackDefinitionsLoading(true);
-    try {
-      const token = getAuthToken();
-      if (!token) {
-        setFeedbackDefinitions([]);
-        return;
-      }
-
-      const res = await fetch("/api/feedback-definitions?status=published", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          ...(orgId ? { "X-ORG-ID": orgId } : {}),
-        },
-      });
-
-      if (res.status === 401) {
-        clearAuth();
-        router.push("/login");
-        setFeedbackDefinitions([]);
-        setFeedbackDefinitionsError("Session expired. Please login again.");
-        return;
-      }
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error((data as any)?.error || (data as any)?.message || "Failed to load feedback definitions");
-      }
-
-      const items = ((data as any)?.data || []) as FeedbackDefinitionListItem[];
-      setFeedbackDefinitions(Array.isArray(items) ? items : []);
-    } catch (e) {
-      setFeedbackDefinitions([]);
-      setFeedbackDefinitionsError(e instanceof Error ? e.message : "Failed to load feedback definitions");
-    } finally {
-      setFeedbackDefinitionsLoading(false);
-    }
-  };
-
   useEffect(() => {
     void loadConfig();
-    void loadFeedbackDefinitions();
+    void loadCampaignDefinitions();
     void loadOrgSettings();
     void loadCapabilities();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
+
+  useEffect(() => {
+    const minutes = config?.utility?.feedback?.delayMinutes;
+    if (typeof minutes === "number" && Number.isFinite(minutes)) {
+      setDelayMinutesDraft(String(minutes));
+    } else {
+      setDelayMinutesDraft(String(60));
+    }
+
+    const existing = ((config as any)?.utility?.feedback?.userInputParameters || {}) as Record<string, string>;
+    setUserInputDraft(existing && typeof existing === "object" ? existing : {});
+  }, [config?.utility?.feedback?.delayMinutes]);
 
   useEffect(() => {
     const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
@@ -304,135 +298,32 @@ export default function FeedbackPage() {
 
   const feedbackEnabled = optimisticFeedbackEnabled ?? !!config?.utility?.feedback?.enabled;
   const feedbackDelayMinutes = config?.utility?.feedback?.delayMinutes ?? 60;
-  const feedbackDefinitionId = config?.utility?.feedback?.definitionId ?? "";
+  const feedbackDefinitionId = config?.utility?.feedback?.campaignDefinitionId ?? config?.utility?.feedback?.definitionId ?? "";
 
-  const loadFeedbackDefinitionPreview = async (id: string) => {
-    setPreviewError(null);
-    setPreviewLoading(true);
-    setPreviewData(null);
-    try {
-      const token = getAuthToken();
-      if (!token) throw new Error("Unauthorized");
+  const selectedCampaignDefinition = useMemo(() => {
+    return publishedCampaignDefinitions.find((d) => d._id === feedbackDefinitionId) || null;
+  }, [publishedCampaignDefinitions, feedbackDefinitionId]);
 
-      const res = await fetch(`/api/feedback-definitions/${encodeURIComponent(id)}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          ...(orgId ? { "X-ORG-ID": orgId } : {}),
-        },
-      });
-
-      if (res.status === 401) {
-        clearAuth();
-        router.push("/login");
-        throw new Error("Session expired. Please login again.");
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error((json as any)?.error || (json as any)?.message || "Failed to load template preview");
-      }
-
-      const parsed = json as FeedbackDefinitionSingleResponse;
-      const def = (parsed?.data || (json as any)?.data || json) as FeedbackDefinitionSingleResponse["data"];
-      setPreviewData(def);
-
-      const mappings = ((def as any)?.templateVariableMappings || {}) as TemplateVariableMappings;
-      const existing = ((config as any)?.utility?.feedback?.userInputParameters || {}) as Record<string, string>;
-      const next: Record<string, string> = {};
-      for (const k of Object.keys(mappings || {})) {
-        const m = (mappings as any)[k];
-        if (m && m.source === "static") {
-          next[k] = String(existing?.[k] ?? "");
-        }
-      }
-      setPreviewUserInputs(next);
-    } catch (e) {
-      setPreviewError(e instanceof Error ? e.message : "Failed to load template preview");
-      setPreviewData(null);
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  const openPreviewForDefinition = async (id: string) => {
-    setPendingDefinitionId(id);
-    setPreviewOpen(true);
-    await loadFeedbackDefinitionPreview(id);
-  };
-
-  const previewMappings = useMemo(() => {
-    return (((previewData as any)?.templateVariableMappings || {}) as TemplateVariableMappings) || {};
-  }, [previewData]);
-
-  const previewUserInputKeys = useMemo(() => {
-    const keys = Object.keys(previewMappings || {}).filter((k) => (previewMappings as any)?.[k]?.source === "static");
+  const feedbackParamKeys = useMemo(() => {
+    const sample = ((selectedCampaignDefinition as any)?.template?.preview?.sampleValues || {}) as Record<string, string>;
+    const existing = (userInputDraft || {}) as Record<string, string>;
+    const keys = Array.from(new Set([...Object.keys(sample), ...Object.keys(existing)]));
     return keys
       .map((k) => Number(k))
       .filter((n) => Number.isFinite(n))
       .sort((a, b) => a - b)
       .map((n) => String(n));
-  }, [previewMappings]);
-
-  function substituteTemplateText(params: {
-    text?: string;
-    sampleValues?: Record<string, string>;
-    mappings?: TemplateVariableMappings;
-    userValues?: Record<string, string>;
-  }): string {
-    const raw = params.text || "";
-    if (!raw) return "";
-
-    return raw.replace(/\{\{(\d+)\}\}/g, (_match, idxRaw) => {
-      const idx = String(idxRaw);
-      const uv = params.userValues?.[idx];
-      if (uv && String(uv).trim()) return String(uv);
-
-      const dummy = params.sampleValues?.[idx];
-      if (dummy && String(dummy).trim()) return String(dummy);
-
-      const mapping = params.mappings?.[idx];
-      if (!mapping) return `{{${idx}}}`;
-      if ((mapping as any).source === "customer") return `[customer.${(mapping as any).path}]`;
-      if ((mapping as any).source === "transaction") return `[transaction.${(mapping as any).path}]`;
-      return "[user input]";
-    });
-  }
-
-  const previewText = useMemo(() => {
-    const p = previewData?.template?.preview;
-    if (!p) return "";
-    const header = substituteTemplateText({
-      text: p.headerText,
-      sampleValues: p.sampleValues,
-      mappings: previewMappings,
-      userValues: previewUserInputs,
-    });
-    const body = substituteTemplateText({
-      text: p.bodyText,
-      sampleValues: p.sampleValues,
-      mappings: previewMappings,
-      userValues: previewUserInputs,
-    });
-    const footer = substituteTemplateText({
-      text: p.footerText,
-      sampleValues: p.sampleValues,
-      mappings: previewMappings,
-      userValues: previewUserInputs,
-    });
-
-    return [header, body, footer].filter(Boolean).join("\n\n");
-  }, [previewData, previewMappings, previewUserInputs]);
+  }, [selectedCampaignDefinition, userInputDraft]);
 
   const selectedDefinitionName = useMemo(() => {
-    const match = feedbackDefinitions.find((d) => d._id === feedbackDefinitionId);
+    const match = publishedCampaignDefinitions.find((d) => d._id === feedbackDefinitionId);
     return match?.name || "";
-  }, [feedbackDefinitions, feedbackDefinitionId]);
+  }, [publishedCampaignDefinitions, feedbackDefinitionId]);
 
   const posEnabled = !!posIntegrationEnabled;
 
   const refreshAll = async () => {
-    await Promise.all([loadConfig(), loadFeedbackDefinitions(), loadOrgSettings(), loadCapabilities()]);
+    await Promise.all([loadConfig(), loadCampaignDefinitions(), loadOrgSettings(), loadCapabilities()]);
     const tz = config?.timezone || orgSettings?.timezone || "Asia/Kolkata";
     if (posEnabled) {
       await loadOrdersTodayCount(tz);
@@ -511,64 +402,121 @@ export default function FeedbackPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-xs text-gray-500">Delay after transaction (minutes)</Label>
-                  <Select
-                    value={String(feedbackDelayMinutes)}
-                    onValueChange={(v) =>
-                      handleUtilityUpdate({
-                        feedback: { ...config!.utility.feedback, delayMinutes: parseInt(v) },
-                      })
-                    }
-                    disabled={saving || !config}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="15">15 minutes</SelectItem>
-                      <SelectItem value="30">30 minutes</SelectItem>
-                      <SelectItem value="60">1 hour</SelectItem>
-                      <SelectItem value="120">2 hours</SelectItem>
-                      <SelectItem value="240">4 hours</SelectItem>
-                      <SelectItem value="1440">24 hours</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={delayMinutesDraft}
+                      onChange={(e) => setDelayMinutesDraft(e.target.value)}
+                      disabled={saving || !config}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!config) return;
+                        const next = Number.parseInt(String(delayMinutesDraft || "").trim(), 10);
+                        if (!Number.isFinite(next) || next <= 0) {
+                          setError("Please enter a valid delay in minutes.");
+                          return;
+                        }
+                        void handleUtilityUpdate({
+                          feedback: { ...config.utility.feedback, delayMinutes: next },
+                        });
+                      }}
+                      disabled={saving || !config}
+                    >
+                      Save
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-500">Feedback template *</Label>
+                  <Label className="text-xs text-gray-500">Campaign definition *</Label>
                   <Select
                     value={feedbackDefinitionId}
                     onValueChange={(v) => {
                       if (!v || !config) return;
-                      openPreviewForDefinition(v);
+                      void handleUtilityUpdate({
+                        feedback: { ...config.utility.feedback, enabled: true, campaignDefinitionId: v },
+                      });
                     }}
-                    disabled={saving || feedbackDefinitionsLoading || !config}
+                    disabled={saving || campaignDefinitionsLoading || !config}
                   >
                     <SelectTrigger className="bg-white">
                       <SelectValue
                         placeholder={
-                          feedbackDefinitionsLoading
+                          campaignDefinitionsLoading
                             ? "Loading definitions..."
-                            : publishedFeedbackDefinitions.length === 0
-                              ? "No feedback definitions"
-                              : "Select a feedback template"
+                            : publishedCampaignDefinitions.length === 0
+                              ? "No campaign definitions"
+                              : "Select a campaign"
                         }
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {publishedFeedbackDefinitions.map((d) => (
+                      {publishedCampaignDefinitions.map((d) => (
                         <SelectItem key={d._id} value={d._id}>
                           {d.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {feedbackDefinitionsError ? (
+                  {campaignDefinitionsError ? (
                     <p className="text-xs text-red-600" role="alert">
-                      {feedbackDefinitionsError}
+                      {campaignDefinitionsError}
                     </p>
                   ) : null}
                 </div>
+
+                {selectedCampaignDefinition ? (
+                  <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                    <div className="text-sm font-medium">Template preview</div>
+                    <div className="text-sm text-muted-foreground">
+                      {String((selectedCampaignDefinition as any)?.template?.preview?.message || "Preview not available")}
+                    </div>
+
+                    {feedbackParamKeys.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium">Template parameters</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {feedbackParamKeys.map((k) => (
+                            <div key={k} className="space-y-1">
+                              <Label className="text-xs">{`{{${k}}}`}</Label>
+                              <Input
+                                value={String(userInputDraft?.[k] ?? "")}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setUserInputDraft((prev) => ({ ...prev, [k]: v }));
+                                }}
+                                placeholder={String(((selectedCampaignDefinition as any)?.template?.preview?.sampleValues || {})?.[k] ?? "")}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              if (!config) return;
+                              void handleUtilityUpdate({
+                                feedback: {
+                                  ...config.utility.feedback,
+                                  enabled: true,
+                                  campaignDefinitionId: feedbackDefinitionId,
+                                  userInputParameters: userInputDraft,
+                                },
+                              });
+                            }}
+                            disabled={saving || !config}
+                          >
+                            Save parameters
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
@@ -683,124 +631,6 @@ export default function FeedbackPage() {
           </CardContent>
         </Card>
       </section>
-
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Feedback Template</DialogTitle>
-            <DialogDescription>Review the template before saving it to your feedback service.</DialogDescription>
-          </DialogHeader>
-
-          {previewLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading preview…
-            </div>
-          ) : previewError ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
-              Unable to load template preview.
-            </div>
-          ) : previewData ? (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-gray-200 p-4">
-                <div className="text-sm font-medium">{previewData.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {previewData.template?.name} ({previewData.template?.language})
-                </div>
-              </div>
-
-              {previewText ? (
-                <MessagePreview templateName={previewData.template?.name || previewData.name} language={previewData.template?.language || ""} preview={previewText} />
-              ) : (
-                <div className="rounded-xl border border-gray-200 p-4 text-sm text-muted-foreground">No preview available.</div>
-              )}
-
-              {Object.keys(previewMappings || {}).length > 0 ? (
-                <div className="rounded-xl border border-gray-200 p-4 space-y-3">
-                  <div className="text-sm font-medium">Variables</div>
-                  <div className="space-y-3">
-                    {Object.keys(previewMappings)
-                      .map((k) => Number(k))
-                      .filter((n) => Number.isFinite(n))
-                      .sort((a, b) => a - b)
-                      .map((n) => {
-                        const key = String(n);
-                        const mapping = (previewMappings as any)?.[key];
-                        const isUserInput = mapping?.source === "static";
-                        const label = isUserInput ? (String(mapping?.label || "").trim() || `{{${key}}}`) : `{{${key}}}`;
-                        const displayValue = isUserInput
-                          ? String(previewUserInputs?.[key] ?? "")
-                          : mapping?.source === "customer" || mapping?.source === "transaction"
-                            ? String(mapping?.path || "")
-                            : "";
-
-                        return (
-                          <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-md border p-3">
-                            <div className="text-xs font-medium text-gray-700">{`{{${key}}}`}</div>
-                            <div className="text-xs text-muted-foreground capitalize">{String(mapping?.source || "").replace("_", " ")}</div>
-                            <div className="space-y-1">
-                              {isUserInput ? (
-                                <>
-                                  <Label className="text-xs">{label} *</Label>
-                                  <Input
-                                    value={displayValue}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                      const v = e.target.value;
-                                      setPreviewUserInputs((prev) => ({ ...prev, [key]: v }));
-                                    }}
-                                    placeholder="Enter value"
-                                  />
-                                </>
-                              ) : (
-                                <div className="text-xs text-gray-700 break-all">{displayValue || "—"}</div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              onClick={async () => {
-                if (!config || !pendingDefinitionId) return;
-
-                for (const k of previewUserInputKeys) {
-                  const v = String(previewUserInputs?.[k] ?? "").trim();
-                  if (!v) {
-                    setPreviewError("Please fill all required values.");
-                    return;
-                  }
-                }
-
-                await handleUtilityUpdate({
-                  feedback: {
-                    ...config.utility.feedback,
-                    enabled: true,
-                    definitionId: pendingDefinitionId,
-                    ...(previewUserInputKeys.length > 0 ? { userInputParameters: previewUserInputs } : {}),
-                  },
-                });
-                setPreviewOpen(false);
-              }}
-              disabled={saving || !pendingDefinitionId}
-              className="gap-2"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-
-

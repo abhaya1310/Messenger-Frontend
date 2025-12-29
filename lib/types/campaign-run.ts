@@ -84,7 +84,16 @@ export interface CampaignRunDefinitionsResponse {
 
 export interface CampaignRunsListResponse {
     success: boolean;
-    data: CampaignRun[];
+    data:
+    | CampaignRun[]
+    | {
+        items: CampaignRun[];
+        total?: number;
+        limit?: number;
+        skip?: number;
+    };
+    campaigns?: CampaignRun[];
+    runs?: CampaignRun[];
 }
 
 export interface CampaignRunSingleResponse {

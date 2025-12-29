@@ -158,7 +158,8 @@ export interface UtilityConfig {
   feedback: {
     enabled: boolean;
     delayMinutes: number;   // 15-1440 minutes
-    definitionId: string;
+    campaignDefinitionId?: string;
+    definitionId?: string;
     userInputParameters?: Record<string, string>;
   };
   reviewRequest: {
