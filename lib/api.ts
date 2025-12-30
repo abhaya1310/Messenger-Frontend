@@ -1051,7 +1051,10 @@ export async function deleteFestival(id: string): Promise<FestivalConfig[]> {
 /**
  * Update utility messaging configuration
  */
-export async function updateUtilityConfig(updates: Partial<UtilityConfig>): Promise<UtilityConfig> {
+export async function updateUtilityConfig(
+  updates: Partial<UtilityConfig>,
+  opts?: { defaultLanguage?: string }
+): Promise<UtilityConfig> {
   if (typeof window === 'undefined') {
     throw new Error('updateUtilityConfig can only be called from the client side');
   }
@@ -1078,7 +1081,10 @@ export async function updateUtilityConfig(updates: Partial<UtilityConfig>): Prom
   const res = await fetch(`${API_BASE}/api/campaign-config`, {
     method: 'PATCH',
     headers,
-    body: JSON.stringify({ utility: payloadUpdates }),
+    body: JSON.stringify({
+      utility: payloadUpdates,
+      ...(opts?.defaultLanguage ? { defaultLanguage: opts.defaultLanguage } : {}),
+    }),
   });
 
   const payload = await parseJsonSafe(res);

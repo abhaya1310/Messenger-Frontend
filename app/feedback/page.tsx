@@ -55,7 +55,7 @@ export default function FeedbackPage() {
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [feedbackDefinitions]);
 
-  const MIN_FEEDBACK_DELAY_MINUTES = 15;
+  const MIN_FEEDBACK_DELAY_MINUTES = 1;
 
   const [delayMinutesDraft, setDelayMinutesDraft] = useState<string>("");
   const [userInputDraft, setUserInputDraft] = useState<Record<string, string>>({});
@@ -85,11 +85,10 @@ export default function FeedbackPage() {
         return;
       }
 
-      const res = await fetch("/api/feedback-definitions?status=published", {
+      const res = await fetch("/api/feedback-definitions", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
-          ...(orgId ? { "X-ORG-ID": orgId } : {}),
         },
       });
 
@@ -261,7 +260,6 @@ export default function FeedbackPage() {
   }, [
     config?.utility?.feedback?.delayMinutes,
     config?.utility?.feedback?.campaignDefinitionId,
-    (config as any)?.utility?.feedback?.definitionId,
     config?.utility?.feedback?.userInputParameters,
   ]);
 
@@ -286,7 +284,8 @@ export default function FeedbackPage() {
       setSavedMessage(null);
     }
     try {
-      const updated = await updateUtilityConfig(updates);
+      const defaultLanguage = String(orgSettings?.whatsapp?.defaultLanguage || config.defaultLanguage || "en");
+      const updated = await updateUtilityConfig(updates, { defaultLanguage });
       setConfig({ ...config, utility: updated });
       if (!background) setSavedMessage("Saved");
     } catch (e) {
@@ -321,7 +320,7 @@ export default function FeedbackPage() {
   };
 
   const feedbackDelayMinutes = config?.utility?.feedback?.delayMinutes ?? 60;
-  const feedbackDefinitionId = config?.utility?.feedback?.definitionId ?? config?.utility?.feedback?.campaignDefinitionId ?? "";
+  const feedbackDefinitionId = config?.utility?.feedback?.campaignDefinitionId ?? "";
 
   const selectedFeedbackDefinition = useMemo(() => {
     return publishedFeedbackDefinitions.find((d) => d._id === feedbackDefinitionId) || null;
@@ -540,7 +539,7 @@ export default function FeedbackPage() {
                       if (!v || !config) return;
                       setError(null);
                       void handleUtilityUpdate({
-                        feedback: { ...config.utility.feedback, definitionId: v, campaignDefinitionId: v },
+                        feedback: { ...config.utility.feedback, campaignDefinitionId: v },
                       });
                     }}
                     disabled={saving || feedbackDefinitionsLoading || !config}
@@ -614,7 +613,6 @@ export default function FeedbackPage() {
                               void handleUtilityUpdate({
                                 feedback: {
                                   ...config.utility.feedback,
-                                  definitionId: feedbackDefinitionId,
                                   campaignDefinitionId: feedbackDefinitionId,
                                   userInputParameters: userEditableVariableKeys.reduce<Record<string, string>>((acc, k) => {
                                     const v = String((userInputDraft as any)?.[k] ?? "");
@@ -757,7 +755,7 @@ export default function FeedbackPage() {
             </div>
           </CardContent>
         </Card>
-      </section>
+      </section >
     </div >
   );
 }

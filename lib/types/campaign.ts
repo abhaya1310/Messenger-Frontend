@@ -179,6 +179,7 @@ export interface CampaignConfig {
   winback: WinbackConfig;
   festivals: FestivalConfig[];
   utility: UtilityConfig;
+  defaultLanguage?: string;
   defaultSendTime: string;
   timezone: string;
   createdAt: string;

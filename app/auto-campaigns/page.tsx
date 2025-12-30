@@ -150,13 +150,12 @@ export default function AutoCampaignsPage() {
         return;
       }
 
-      const res = await fetch("/api/feedback-definitions?status=published", {
+      const res = await fetch("/api/feedback-definitions", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((data as any)?.error || (data as any)?.message || "Failed to load feedback definitions");
@@ -220,7 +219,7 @@ export default function AutoCampaignsPage() {
       festivals: [],
       utility: {
         billMessaging: { enabled: false, autoSend: false, templateId: "" },
-        feedback: { enabled: false, delayMinutes: 60, definitionId: "" },
+        feedback: { enabled: false, delayMinutes: 60, campaignDefinitionId: "" },
         reviewRequest: { enabled: false, daysAfterVisit: 1, reviewLink: "", templateId: "" },
       },
       defaultSendTime: "10:00",
@@ -461,10 +460,11 @@ export default function AutoCampaignsPage() {
     if (!config) return;
     setSaving("utility");
     try {
-      const updated = await updateUtilityConfig(updates);
+      const defaultLanguage = String((config as any)?.defaultLanguage || "en");
+      const updated = await updateUtilityConfig(updates, { defaultLanguage });
       setConfig({ ...config, utility: updated });
     } catch (error) {
-      alert(handleApiError(error));
+      handleApiError(error);
     } finally {
       setSaving(null);
     }
@@ -1066,10 +1066,10 @@ export default function AutoCampaignsPage() {
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Feedback template *</Label>
                       <Select
-                        value={config.utility.feedback.definitionId || config.utility.feedback.campaignDefinitionId || ""}
+                        value={config.utility.feedback.campaignDefinitionId || ""}
                         onValueChange={(v) =>
                           handleUtilityUpdate({
-                            feedback: { ...config.utility.feedback, definitionId: v, campaignDefinitionId: v },
+                            feedback: { ...config.utility.feedback, campaignDefinitionId: v },
                           })
                         }
                         disabled={saving === "utility" || feedbackDefinitionsLoading}
