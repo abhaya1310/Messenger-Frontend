@@ -25,11 +25,14 @@ async function fetchWithErrorHandling(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      throw new Error(
+      const err: any = new Error(
         `API request failed: ${response.status} ${response.statusText}\n` +
         `URL: ${urlString}\n` +
         `Response: ${errorText}`
       );
+      err.status = response.status;
+      err.payload = errorText;
+      throw err;
     }
 
     return response;
@@ -537,6 +540,12 @@ export async function fetchConversations(params: {
   if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
   const res = await fetch(url.toString(), { headers });
+  if (res.status === 401) {
+    clearAuth();
+    if (typeof window !== 'undefined') {
+      window.location.assign('/login?reason=session_expired');
+    }
+  }
   const payload = await parseJsonSafe(res);
   if (!res.ok) {
     throw toApiError(res, payload, 'Failed to load conversations');
@@ -589,6 +598,12 @@ export async function fetchConversationMessages(
   if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
   const res = await fetch(url.toString(), { headers });
+  if (res.status === 401) {
+    clearAuth();
+    if (typeof window !== 'undefined') {
+      window.location.assign('/login?reason=session_expired');
+    }
+  }
   const payload = await parseJsonSafe(res);
   if (!res.ok) {
     throw toApiError(res, payload, 'Failed to load messages');
@@ -624,6 +639,13 @@ export async function updateConversationMetadata(
     headers,
     body: JSON.stringify(metadata),
   });
+
+  if (res.status === 401) {
+    clearAuth();
+    if (typeof window !== 'undefined') {
+      window.location.assign('/login?reason=session_expired');
+    }
+  }
 
   const payload = await parseJsonSafe(res);
   if (!res.ok) {
@@ -667,7 +689,7 @@ export async function sendTextMessage(
 // POS & Campaign API Functions
 // ============================================================================
 
-import { getCurrentOrgId, getAuthToken } from './auth';
+import { getCurrentOrgId, getAuthToken, clearAuth } from './auth';
 import type {
   POSCustomer,
   CustomerListParams,
@@ -740,12 +762,22 @@ export async function apiClient<T>(
 
   // Also include admin token for backwards compatibility
 
-  const res = await fetchWithErrorHandling(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const res = await fetchWithErrorHandling(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-  return res.json();
+    return res.json();
+  } catch (e: any) {
+    if (e?.status === 401) {
+      clearAuth();
+      if (typeof window !== 'undefined') {
+        window.location.assign('/login?reason=session_expired');
+      }
+    }
+    throw e;
+  }
 }
 
 // ============================================================================
@@ -819,7 +851,7 @@ export async function fetchCampaigns(params: CampaignListParams = {}): Promise<C
   if (params.limit) searchParams.set('limit', params.limit.toString());
 
   const queryString = searchParams.toString();
-  const raw = await apiClient<any>(`/api/campaign-runs${queryString ? `?${queryString}` : ''}`);
+  const raw = await apiClient<any>(`/api/campaigns${queryString ? `?${queryString}` : ''}`);
   const data = unwrapApiResponse<any>(raw);
 
   if (data && typeof data === 'object' && Array.isArray((data as any).campaigns)) {

@@ -94,9 +94,9 @@ export default function FeedbackPage() {
 
       if (res.status === 401) {
         clearAuth();
-        router.push("/login");
+        router.push("/login?reason=session_expired");
         setFeedbackDefinitions([]);
-        setFeedbackDefinitionsError("Session expired. Please login again.");
+        setFeedbackDefinitionsError("Your session has expired. Please log in again.");
         return;
       }
 
@@ -135,9 +135,9 @@ export default function FeedbackPage() {
 
       if (res.status === 401) {
         clearAuth();
-        router.push("/login");
+        router.push("/login?reason=session_expired");
         setPosIntegrationEnabled(null);
-        setCapabilitiesError("Session expired. Please login again.");
+        setCapabilitiesError("Your session has expired. Please log in again.");
         return;
       }
 

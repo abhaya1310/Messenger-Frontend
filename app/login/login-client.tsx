@@ -35,6 +35,14 @@ export default function LoginClient() {
         }
     }, [searchParams]);
 
+    useEffect(() => {
+        const reason = searchParams.get("reason");
+        if (reason === "session_expired") {
+            setError(null);
+            setInfo("Your session has expired. Please log in again.");
+        }
+    }, [searchParams]);
+
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
         setError(null);

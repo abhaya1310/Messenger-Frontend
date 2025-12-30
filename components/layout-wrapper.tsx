@@ -42,7 +42,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.replace("/login");
+      router.replace("/login?reason=session_expired");
     }
   }, [isAuthenticated, router]);
 

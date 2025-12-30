@@ -195,8 +195,8 @@ export default function CampaignsClient() {
             const token = getAuthToken();
             if (!token) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
 
             const res = await fetch(`/api/campaign-runs/definitions/${encodeURIComponent(id)}`, {
@@ -209,8 +209,8 @@ export default function CampaignsClient() {
             const json = await parseJsonSafe(res);
             if (res.status === 401) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load definition";
@@ -247,18 +247,14 @@ export default function CampaignsClient() {
         try {
             const token = getAuthToken();
             if (!token) {
-                setError("Session expired. Please login again.");
+                setError("Your session has expired. Please log in again.");
                 setCampaigns([]);
                 clearAuth();
-                router.push("/login");
+                router.push("/login?reason=session_expired");
                 return;
             }
 
             const orgId = resolvedOrgId;
-            if (!orgId) {
-                setCampaigns([]);
-                return;
-            }
             const headers: Record<string, string> = {
                 Authorization: `Bearer ${token}`,
             };
@@ -268,16 +264,16 @@ export default function CampaignsClient() {
             params.set("limit", "50");
             if (statusFilter !== "all") params.set("status", statusFilter);
 
-            const res = await fetch(`/api/campaign-runs?${params.toString()}`, {
+            const res = await fetch(`/api/campaigns?${params.toString()}`, {
                 method: "GET",
                 headers,
             });
 
             if (res.status === 401) {
                 clearAuth();
-                router.push("/login");
+                router.push("/login?reason=session_expired");
                 setCampaigns([]);
-                setError("Session expired. Please login again.");
+                setError("Your session has expired. Please log in again.");
                 return;
             }
 
