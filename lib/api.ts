@@ -1062,6 +1062,15 @@ export async function updateUtilityConfig(
   const payloadUpdates: any = structuredClone(updates as any);
   const fb = payloadUpdates?.feedback;
   if (fb && typeof fb === 'object') {
+    if ('delayMinutes' in fb) {
+      const raw = (fb as any).delayMinutes;
+      const parsed = typeof raw === 'number' ? raw : Number.parseInt(String(raw ?? '').trim(), 10);
+      if (Number.isFinite(parsed)) {
+        (fb as any).delayMinutes = Math.max(1, Math.trunc(parsed));
+      } else {
+        delete (fb as any).delayMinutes;
+      }
+    }
     if (!fb.campaignDefinitionId && fb.definitionId) {
       fb.campaignDefinitionId = fb.definitionId;
     }

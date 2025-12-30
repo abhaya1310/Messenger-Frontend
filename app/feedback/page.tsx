@@ -466,8 +466,13 @@ export default function FeedbackPage() {
                   setOptimisticFeedbackEnabled(checked);
                   void (async () => {
                     try {
+                      const rawDelay = (config.utility.feedback as any)?.delayMinutes;
+                      const parsedDelay = typeof rawDelay === "number" ? rawDelay : Number.parseInt(String(rawDelay ?? "").trim(), 10);
+                      const safeDelay = Number.isFinite(parsedDelay)
+                        ? Math.max(MIN_FEEDBACK_DELAY_MINUTES, Math.trunc(parsedDelay))
+                        : MIN_FEEDBACK_DELAY_MINUTES;
                       await handleUtilityUpdate({
-                        feedback: { ...config.utility.feedback, enabled: checked },
+                        feedback: { ...config.utility.feedback, enabled: checked, delayMinutes: safeDelay },
                       }, { background: true });
                     } catch (e: any) {
                       setOptimisticFeedbackEnabled(previous);
