@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -618,7 +619,13 @@ export default function CampaignRunsClient() {
                     <div className="flex justify-between items-center py-6">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900">Campaign Runs</h1>
-                            <p className="text-gray-600 mt-1">Create and manage runs from the campaign catalog</p>
+                            <p className="text-gray-600 mt-1">
+                                Runs are executions created from published catalog definitions. For created campaigns, go to{' '}
+                                <Link href="/campaigns" className="underline">
+                                    Campaigns
+                                </Link>
+                                .
+                            </p>
                         </div>
                         <Button onClick={openCreateDialog} className="gap-2">
                             <Plus className="h-4 w-4" />

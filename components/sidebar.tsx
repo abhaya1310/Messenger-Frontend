@@ -47,6 +47,11 @@ const navItems: NavItem[] = [
     icon: Megaphone,
   },
   {
+    title: "Campaign Runs",
+    href: "/campaigns/runs",
+    icon: Megaphone,
+  },
+  {
     title: "Auto Campaigns",
     href: "/auto-campaigns",
     icon: Workflow,
