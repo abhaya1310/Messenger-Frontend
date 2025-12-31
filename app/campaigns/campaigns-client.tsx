@@ -284,7 +284,14 @@ export default function CampaignsClient() {
             }
 
             const data = (json as any)?.data ?? json;
-            const items = Array.isArray(data?.campaigns) ? data.campaigns : Array.isArray(data) ? data : [];
+            const items =
+                (Array.isArray((data as any)?.campaigns) ? (data as any).campaigns : null) ||
+                (Array.isArray((data as any)?.items) ? (data as any).items : null) ||
+                (Array.isArray((data as any)?.results) ? (data as any).results : null) ||
+                (Array.isArray((json as any)?.campaigns) ? (json as any).campaigns : null) ||
+                (Array.isArray((json as any)?.items) ? (json as any).items : null) ||
+                (Array.isArray((json as any)?.results) ? (json as any).results : null) ||
+                (Array.isArray(data) ? data : []);
             setCampaigns(items as Campaign[]);
             startPollingIfNeeded(items as Campaign[]);
         } catch (e) {
@@ -353,8 +360,8 @@ export default function CampaignsClient() {
             const token = getAuthToken();
             if (!token) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
 
             const res = await fetch("/api/campaign-runs/definitions", {
@@ -367,8 +374,8 @@ export default function CampaignsClient() {
             const json = await parseJsonSafe(res);
             if (res.status === 401) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load campaign catalog";
@@ -393,8 +400,8 @@ export default function CampaignsClient() {
             const token = getAuthToken();
             if (!token) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
 
             const res = await fetch(`/api/campaign-runs/definitions/${encodeURIComponent(id)}`, {
@@ -407,8 +414,8 @@ export default function CampaignsClient() {
             const json = await parseJsonSafe(res);
             if (res.status === 401) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load definition";
@@ -441,8 +448,8 @@ export default function CampaignsClient() {
             const token = getAuthToken();
             if (!token) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
 
             const res = await fetch("/api/segments?limit=50&skip=0", {
@@ -455,8 +462,8 @@ export default function CampaignsClient() {
             const json = await parseJsonSafe(res);
             if (res.status === 401) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
             if (!res.ok) {
                 const msg = (json as any)?.error || (json as any)?.message || "Failed to load segments";
@@ -580,8 +587,8 @@ export default function CampaignsClient() {
 
             if (res.status === 401) {
                 clearAuth();
-                router.push("/login");
-                throw new Error("Session expired. Please login again.");
+                router.push("/login?reason=session_expired");
+                throw new Error("Your session has expired. Please log in again.");
             }
 
             const json = await parseJsonSafe(res);

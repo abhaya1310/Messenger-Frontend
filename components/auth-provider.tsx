@@ -14,6 +14,7 @@ import {
   type LoginCredentials,
   type AuthState,
   validateSessionWithMeEndpoint,
+  fetchMe,
   // Legacy support
   validateCredentials,
 } from "@/lib/auth";
@@ -60,6 +61,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           setIsLoading(false);
           return;
+        }
+
+        if (!stored.orgId) {
+          const me = await fetchMe(stored.token).catch(() => null);
+          const recoveredOrgId = me?.orgId;
+          if (typeof recoveredOrgId === "string" && recoveredOrgId.trim()) {
+            try {
+              localStorage.setItem(
+                "connectnow_org",
+                JSON.stringify({ orgId: recoveredOrgId.trim(), orgName: stored.orgName ?? null })
+              );
+            } catch {
+              // ignore
+            }
+            stored.orgId = recoveredOrgId.trim();
+            stored.user = me;
+          }
         }
       }
 
