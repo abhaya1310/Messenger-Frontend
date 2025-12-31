@@ -751,7 +751,7 @@ export async function apiClient<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  if (orgId && !endpoint.startsWith('/api/campaign-config')) {
+  if (orgId && !endpoint.startsWith('/api/campaign-config') && !endpoint.startsWith('/api/campaigns')) {
     headers['X-ORG-ID'] = orgId;
   }
 
@@ -867,8 +867,28 @@ export async function fetchCampaigns(params: CampaignListParams = {}): Promise<C
  * Fetch single campaign by ID
  */
 export async function fetchCampaign(campaignId: string): Promise<Campaign> {
-  const raw = await apiClient<any>(`/api/campaign-runs/${campaignId}`);
+  const raw = await apiClient<any>(`/api/campaigns/${campaignId}`);
   return unwrapApiResponse<Campaign>(raw);
+}
+
+export async function fetchCampaignsCreated(params: { limit?: number; skip?: number } = {}): Promise<any> {
+  const searchParams = new URLSearchParams();
+  if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+  if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+  const query = searchParams.toString();
+
+  const raw = await apiClient<any>(`/api/campaigns/created${query ? `?${query}` : ''}`);
+  return unwrapApiResponse<any>(raw);
+}
+
+export async function fetchCampaignRuns(params: { limit?: number; skip?: number } = {}): Promise<any> {
+  const searchParams = new URLSearchParams();
+  if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+  if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+  const query = searchParams.toString();
+
+  const raw = await apiClient<any>(`/api/campaigns/runs${query ? `?${query}` : ''}`);
+  return unwrapApiResponse<any>(raw);
 }
 
 /**
@@ -965,6 +985,11 @@ export async function cancelCampaign(campaignId: string): Promise<Campaign> {
 export async function fetchCampaignConfig(): Promise<CampaignConfig> {
   const response = await apiClient<{ success: boolean; data: CampaignConfig }>('/api/campaign-config');
   return response.data;
+}
+
+export async function fetchCampaignConfigCreated(): Promise<any> {
+  const raw = await apiClient<any>('/api/campaign-config/created');
+  return unwrapApiResponse<any>(raw);
 }
 
 /**
@@ -1106,13 +1131,11 @@ export async function updateUtilityConfig(
     }
   }
 
-  const orgId = getCurrentOrgId();
   const token = getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (orgId) headers['X-ORG-ID'] = orgId;
 
   const res = await fetch(`${API_BASE}/api/campaign-config`, {
     method: 'PATCH',

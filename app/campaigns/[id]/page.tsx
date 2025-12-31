@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, RefreshCcw, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
-import { getAuthToken, getCurrentOrgId } from "@/lib/auth";
+import { clearAuth, getAuthToken } from "@/lib/auth";
 import type { Campaign } from "@/lib/types/campaign";
 
 async function parseJsonSafe(res: Response) {
@@ -85,21 +85,27 @@ export default function CampaignDetailPage() {
         try {
             const token = getAuthToken();
             if (!token) {
-                setError("Unauthorized");
+                setError("Your session has expired. Please log in again.");
                 setCampaign(null);
                 return;
             }
 
-            const orgId = getCurrentOrgId();
             const headers: Record<string, string> = {
                 Authorization: `Bearer ${token}`,
             };
-            if (orgId) headers["X-ORG-ID"] = orgId;
 
             const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, {
                 method: "GET",
                 headers,
             });
+
+            if (res.status === 401) {
+                clearAuth();
+                setCampaign(null);
+                setError("Your session has expired. Please log in again.");
+                window.location.assign("/login?reason=session_expired");
+                return;
+            }
 
             const json = await parseJsonSafe(res);
             if (!res.ok) {
@@ -112,11 +118,19 @@ export default function CampaignDetailPage() {
 
             if (data?.status === "preparing") {
                 if (!pollingRef.current) {
-                    pollingRef.current = window.setInterval(() => load({ silent: true }), 3000);
+                    pollingRef.current = window.setInterval(() => load({ silent: true }), 7000);
                 }
-            } else {
-                stopPolling();
+                return;
             }
+
+            if (data?.status === "active") {
+                if (!pollingRef.current) {
+                    pollingRef.current = window.setInterval(() => load({ silent: true }), 15000);
+                }
+                return;
+            }
+
+            stopPolling();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load campaign");
             setCampaign(null);

@@ -16,9 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
-import { useAuth } from "@/components/auth-provider";
-import { clearAuth, getAuthToken, getCurrentOrgId } from "@/lib/auth";
-import { fetchCampaignConfig } from "@/lib/api";
+import { clearAuth, getAuthToken } from "@/lib/auth";
+import { fetchCampaignConfigCreated, fetchCampaignRuns, fetchCampaignsCreated } from "@/lib/api";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } from "@/lib/types/campaign-definition";
 import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
@@ -102,25 +101,29 @@ function parsePhoneList(value: string): string[] {
 
 export default function CampaignsClient() {
     const router = useRouter();
-    const { orgId: authOrgId } = useAuth();
 
-    const resolvedOrgId = useMemo(() => getCurrentOrgId() || authOrgId, [authOrgId]);
-
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const [createdCampaignsLoading, setCreatedCampaignsLoading] = useState(false);
-    const [createdCampaignsError, setCreatedCampaignsError] = useState<string | null>(null);
-    const [createdCampaigns, setCreatedCampaigns] = useState<Array<{ key: string; title: string; subtitle?: string }>>([]);
+    const [autoLoading, setAutoLoading] = useState(false);
+    const [autoError, setAutoError] = useState<string | null>(null);
+    const [autoGroups, setAutoGroups] = useState<{ auto: any[]; utility: any[] }>({ auto: [], utility: [] });
+
+    const [promoTab, setPromoTab] = useState<"created" | "runs">("created");
+    const [promoCreatedLoading, setPromoCreatedLoading] = useState(false);
+    const [promoCreatedError, setPromoCreatedError] = useState<string | null>(null);
+    const [promoCreated, setPromoCreated] = useState<Campaign[]>([]);
+
+    const [promoRunsLoading, setPromoRunsLoading] = useState(false);
+    const [promoRunsError, setPromoRunsError] = useState<string | null>(null);
+    const [promoRuns, setPromoRuns] = useState<Campaign[]>([]);
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<Campaign["status"] | "all">("all");
 
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
 
-    const pollingRef = useRef<number | null>(null);
+    const createdPollingRef = useRef<number | null>(null);
+    const runsPollingRef = useRef<number | null>(null);
 
     const [createName, setCreateName] = useState("");
     const [createDescription, setCreateDescription] = useState("");
@@ -171,71 +174,127 @@ export default function CampaignsClient() {
         return mappingList.filter((m) => (m.sourceType || "").toLowerCase() === "user_input");
     }, [mappingList]);
 
-    const filteredCampaigns = useMemo(() => {
+    const filteredCreated = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
-        return (campaigns || [])
-            .filter((c) => (statusFilter === "all" ? true : c.status === statusFilter))
-            .filter((c) => {
-                if (!q) return true;
-                return (
-                    (c.name || "").toLowerCase().includes(q) ||
-                    (c.template?.name || "").toLowerCase().includes(q) ||
-                    campaignId(c).toLowerCase().includes(q)
-                );
-            });
-    }, [campaigns, searchQuery, statusFilter]);
+        return (promoCreated || []).filter((c) => {
+            if (!q) return true;
+            return (
+                (c.name || "").toLowerCase().includes(q) ||
+                (c.template?.name || "").toLowerCase().includes(q) ||
+                campaignId(c).toLowerCase().includes(q)
+            );
+        });
+    }, [promoCreated, searchQuery]);
 
-    const loadCreatedCampaigns = async () => {
-        setCreatedCampaignsError(null);
-        setCreatedCampaignsLoading(true);
-        try {
-            const token = getAuthToken();
-            if (!token) {
-                setCreatedCampaigns([]);
-                return;
-            }
+    const filteredRuns = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        return (promoRuns || []).filter((c) => {
+            if (!q) return true;
+            return (
+                (c.name || "").toLowerCase().includes(q) ||
+                (c.template?.name || "").toLowerCase().includes(q) ||
+                campaignId(c).toLowerCase().includes(q)
+            );
+        });
+    }, [promoRuns, searchQuery]);
 
-            const cfg = await fetchCampaignConfig();
-            const next: Array<{ key: string; title: string; subtitle?: string }> = [];
-
-            if (cfg?.birthday?.enabled) next.push({ key: "birthday", title: "Birthday" });
-            if (cfg?.anniversary?.enabled) next.push({ key: "anniversary", title: "Anniversary" });
-            if (cfg?.firstVisit?.enabled) next.push({ key: "firstVisit", title: "First Visit" });
-
-            if (cfg?.winback?.enabled) {
-                const tiers = Array.isArray(cfg.winback?.tiers) ? cfg.winback.tiers : [];
-                const enabledTiers = tiers.filter((t: any) => Boolean(t?.enabled));
-                next.push({
-                    key: "winback",
-                    title: "Winback",
-                    subtitle: enabledTiers.length > 0 ? `${enabledTiers.length} tier(s) enabled` : undefined,
-                });
-            }
-
-            const festivals = Array.isArray(cfg?.festivals) ? cfg.festivals : [];
-            const enabledFestivals = festivals.filter((f: any) => Boolean(f?.enabled));
-            for (const f of enabledFestivals) {
-                const name = String((f as any)?.name || "Festival");
-                next.push({ key: `festival:${name}`, title: name });
-            }
-
-            if (cfg?.utility?.billMessaging?.enabled) next.push({ key: "utility.billMessaging", title: "Bill Messaging" });
-            if (cfg?.utility?.feedback?.enabled) next.push({ key: "utility.feedback", title: "Feedback" });
-            if (cfg?.utility?.reviewRequest?.enabled) next.push({ key: "utility.reviewRequest", title: "Review Request" });
-
-            setCreatedCampaigns(next);
-        } catch (e) {
-            setCreatedCampaigns([]);
-            setCreatedCampaignsError(e instanceof Error ? e.message : "Failed to load created campaigns");
-        } finally {
-            setCreatedCampaignsLoading(false);
+    const stopCreatedPolling = () => {
+        if (createdPollingRef.current) {
+            window.clearInterval(createdPollingRef.current);
+            createdPollingRef.current = null;
         }
     };
 
-    const stopPolling = () => {
-        if (pollingRef.current) {
-            window.clearInterval(pollingRef.current);
-            pollingRef.current = null;
+    const stopRunsPolling = () => {
+        if (runsPollingRef.current) {
+            window.clearInterval(runsPollingRef.current);
+            runsPollingRef.current = null;
+        }
+    };
+
+    const loadAutoCampaigns = async () => {
+        setAutoError(null);
+        setAutoLoading(true);
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                setAutoGroups({ auto: [], utility: [] });
+                return;
+            }
+
+            const raw = await fetchCampaignConfigCreated();
+            const data: any = (raw as any)?.data ?? raw;
+            const items: any[] =
+                (Array.isArray(data?.items) ? data.items : null) ||
+                (Array.isArray((raw as any)?.items) ? (raw as any).items : null) ||
+                (Array.isArray(data) ? data : []);
+
+            const auto = items.filter((i) => String(i?.category || "").toLowerCase() === "auto");
+            const utility = items.filter((i) => String(i?.category || "").toLowerCase() === "utility");
+            setAutoGroups({ auto, utility });
+        } catch (e) {
+            setAutoGroups({ auto: [], utility: [] });
+            setAutoError(e instanceof Error ? e.message : "Failed to load auto campaigns");
+        } finally {
+            setAutoLoading(false);
+        }
+    };
+
+    const loadPromotionalCreated = async (opts?: { silent?: boolean }) => {
+        if (!opts?.silent) setPromoCreatedLoading(true);
+        setPromoCreatedError(null);
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                setPromoCreated([]);
+                setPromoCreatedError("Your session has expired. Please log in again.");
+                clearAuth();
+                router.push("/login?reason=session_expired");
+                return;
+            }
+
+            const res = await fetchCampaignsCreated({ limit: 50, skip: 0 });
+            const data: any = (res as any)?.data ?? res;
+            const items: any[] =
+                (Array.isArray(data?.items) ? data.items : null) ||
+                (Array.isArray((res as any)?.items) ? (res as any).items : null) ||
+                (Array.isArray(data) ? data : []);
+
+            setPromoCreated(items as Campaign[]);
+        } catch (e) {
+            setPromoCreated([]);
+            setPromoCreatedError(e instanceof Error ? e.message : "Failed to load created campaigns");
+        } finally {
+            if (!opts?.silent) setPromoCreatedLoading(false);
+        }
+    };
+
+    const loadPromotionalRuns = async (opts?: { silent?: boolean }) => {
+        if (!opts?.silent) setPromoRunsLoading(true);
+        setPromoRunsError(null);
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                setPromoRuns([]);
+                setPromoRunsError("Your session has expired. Please log in again.");
+                clearAuth();
+                router.push("/login?reason=session_expired");
+                return;
+            }
+
+            const res = await fetchCampaignRuns({ limit: 50, skip: 0 });
+            const data: any = (res as any)?.data ?? res;
+            const items: any[] =
+                (Array.isArray(data?.items) ? data.items : null) ||
+                (Array.isArray((res as any)?.items) ? (res as any).items : null) ||
+                (Array.isArray(data) ? data : []);
+
+            setPromoRuns(items as Campaign[]);
+        } catch (e) {
+            setPromoRuns([]);
+            setPromoRunsError(e instanceof Error ? e.message : "Failed to load campaign runs");
+        } finally {
+            if (!opts?.silent) setPromoRunsLoading(false);
         }
     };
 
@@ -279,97 +338,42 @@ export default function CampaignsClient() {
         }
     };
 
-    const startPollingIfNeeded = (items: Campaign[]) => {
-        const anyPreparing = items.some((c) => c.status === "preparing");
-        if (!anyPreparing) {
-            stopPolling();
-            return;
-        }
-        if (pollingRef.current) return;
-        pollingRef.current = window.setInterval(() => {
-            loadCampaigns({ silent: true });
-        }, 3000);
-    };
-
-    const loadCampaigns = async (opts?: { silent?: boolean }) => {
-        if (!opts?.silent) {
-            setLoading(true);
-        }
-        setError(null);
-        try {
-            const token = getAuthToken();
-            if (!token) {
-                setError("Your session has expired. Please log in again.");
-                setCampaigns([]);
-                clearAuth();
-                router.push("/login?reason=session_expired");
-                return;
-            }
-
-            const orgId = resolvedOrgId;
-            const headers: Record<string, string> = {
-                Authorization: `Bearer ${token}`,
-            };
-            if (orgId) headers["X-ORG-ID"] = orgId;
-
-            const params = new URLSearchParams();
-            params.set("limit", "50");
-            if (statusFilter !== "all") params.set("status", statusFilter);
-
-            const res = await fetch(`/api/campaigns?${params.toString()}`, {
-                method: "GET",
-                headers,
-            });
-
-            if (res.status === 401) {
-                clearAuth();
-                router.push("/login?reason=session_expired");
-                setCampaigns([]);
-                setError("Your session has expired. Please log in again.");
-                return;
-            }
-
-            const json = await parseJsonSafe(res);
-            if (!res.ok) {
-                const msg = (json as any)?.error || (json as any)?.message || "Failed to load campaigns";
-                throw new Error(msg);
-            }
-
-            const data = (json as any)?.data ?? json;
-            const items =
-                (Array.isArray((data as any)?.campaigns) ? (data as any).campaigns : null) ||
-                (Array.isArray((data as any)?.items) ? (data as any).items : null) ||
-                (Array.isArray((data as any)?.results) ? (data as any).results : null) ||
-                (Array.isArray((json as any)?.campaigns) ? (json as any).campaigns : null) ||
-                (Array.isArray((json as any)?.items) ? (json as any).items : null) ||
-                (Array.isArray((json as any)?.results) ? (json as any).results : null) ||
-                (Array.isArray(data) ? data : []);
-            setCampaigns(items as Campaign[]);
-            startPollingIfNeeded(items as Campaign[]);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to load campaigns");
-            setCampaigns([]);
-        } finally {
-            if (!opts?.silent) setLoading(false);
-        }
-    };
-
     useEffect(() => {
-        loadCampaigns();
-        return () => stopPolling();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [statusFilter]);
-
-    useEffect(() => {
-        loadCreatedCampaigns();
+        loadAutoCampaigns();
+        loadPromotionalCreated();
+        loadPromotionalRuns();
+        return () => {
+            stopCreatedPolling();
+            stopRunsPolling();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        if (!resolvedOrgId) return;
-        loadCampaigns({ silent: true });
+        const anyPreparing = promoCreated.some((c) => c.status === "preparing");
+        if (!anyPreparing) {
+            stopCreatedPolling();
+            return;
+        }
+        if (createdPollingRef.current) return;
+        createdPollingRef.current = window.setInterval(() => {
+            loadPromotionalCreated({ silent: true });
+        }, 7000);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resolvedOrgId]);
+    }, [promoCreated]);
+
+    useEffect(() => {
+        const anyActive = promoRuns.some((c) => c.status === "active");
+        if (!anyActive) {
+            stopRunsPolling();
+            return;
+        }
+        if (runsPollingRef.current) return;
+        runsPollingRef.current = window.setInterval(() => {
+            loadPromotionalRuns({ silent: true });
+        }, 15000);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [promoRuns]);
 
     useEffect(() => {
         loadDefinitions();
@@ -587,12 +591,10 @@ export default function CampaignsClient() {
             const token = getAuthToken();
             if (!token) throw new Error("Unauthorized");
 
-            const orgId = getCurrentOrgId() || authOrgId;
             const headers: Record<string, string> = {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`,
             };
-            if (orgId) headers["X-ORG-ID"] = orgId;
 
             const filters: any = {};
             const minVisits = safeNumber(createMinVisits);
@@ -658,7 +660,7 @@ export default function CampaignsClient() {
             const id = campaignId(created);
             setShowCreate(false);
 
-            await loadCampaigns({ silent: true });
+            await Promise.all([loadPromotionalCreated({ silent: true }), loadPromotionalRuns({ silent: true })]);
 
             if (id) {
                 router.push(`/campaigns/${encodeURIComponent(id)}`);
@@ -844,39 +846,65 @@ export default function CampaignsClient() {
 
                 <Card className="mb-6">
                     <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
-                        <CardTitle className="text-base">Created Campaigns</CardTitle>
-                        <Button size="sm" variant="outline" onClick={loadCreatedCampaigns} disabled={createdCampaignsLoading} className="gap-2">
-                            {createdCampaignsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                        <CardTitle className="text-base">Auto Campaigns</CardTitle>
+                        <Button size="sm" variant="outline" onClick={loadAutoCampaigns} disabled={autoLoading} className="gap-2">
+                            {autoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                             Refresh
                         </Button>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        {createdCampaignsLoading ? (
+                        {autoLoading ? (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
                                 Loading…
                             </div>
-                        ) : createdCampaignsError ? (
+                        ) : autoError ? (
                             <div className="text-sm text-destructive" role="alert">
-                                {createdCampaignsError}
+                                {autoError}
                             </div>
-                        ) : createdCampaigns.length === 0 ? (
-                            <div className="text-sm text-muted-foreground">No created campaigns enabled.</div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {createdCampaigns.map((c) => (
-                                    <div key={c.key} className="rounded-md border p-3">
-                                        <div className="font-medium">{c.title}</div>
-                                        {c.subtitle ? <div className="text-xs text-muted-foreground">{c.subtitle}</div> : null}
-                                    </div>
-                                ))}
+                            <div className="space-y-4">
+                                <div>
+                                    <div className="text-sm font-medium">Auto</div>
+                                    {autoGroups.auto.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">No auto campaigns configured.</div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                            {autoGroups.auto.map((i) => (
+                                                <div key={String(i?.key || i?.id || i?.name || Math.random())} className="rounded-md border p-3">
+                                                    <div className="font-medium">{String(i?.title || i?.name || i?.key || "Auto campaign")}</div>
+                                                    {i?.description ? <div className="text-xs text-muted-foreground">{String(i.description)}</div> : null}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <div className="text-sm font-medium">Utility</div>
+                                    {autoGroups.utility.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">No utility campaigns configured.</div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                            {autoGroups.utility.map((i) => (
+                                                <div key={String(i?.key || i?.id || i?.name || Math.random())} className="rounded-md border p-3">
+                                                    <div className="font-medium">{String(i?.title || i?.name || i?.key || "Utility campaign")}</div>
+                                                    {i?.description ? <div className="text-xs text-muted-foreground">{String(i.description)}</div> : null}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </CardContent>
                 </Card>
 
                 <Card className="mb-6">
-                    <CardContent className="pt-6">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Promotional Campaigns</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
                         <div className="flex flex-wrap gap-4">
                             <div className="flex-1 min-w-[240px]">
                                 <div className="relative">
@@ -890,107 +918,153 @@ export default function CampaignsClient() {
                                 </div>
                             </div>
 
-                            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-                                <SelectTrigger className="w-[200px]">
-                                    <SelectValue placeholder="Status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Statuses</SelectItem>
-                                    <SelectItem value="draft">Draft</SelectItem>
-                                    <SelectItem value="preparing">Preparing</SelectItem>
-                                    <SelectItem value="scheduled">Scheduled</SelectItem>
-                                    <SelectItem value="active">Active</SelectItem>
-                                    <SelectItem value="paused">Paused</SelectItem>
-                                    <SelectItem value="completed">Completed</SelectItem>
-                                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                                    <SelectItem value="failed">Failed</SelectItem>
-                                </SelectContent>
-                            </Select>
-
-                            <Button variant="outline" onClick={() => loadCampaigns()} disabled={loading} className="gap-2">
-                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                            <Button
+                                variant="outline"
+                                onClick={() => (promoTab === "created" ? loadPromotionalCreated() : loadPromotionalRuns())}
+                                disabled={promoTab === "created" ? promoCreatedLoading : promoRunsLoading}
+                                className="gap-2"
+                            >
+                                {(promoTab === "created" ? promoCreatedLoading : promoRunsLoading) ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RefreshCcw className="h-4 w-4" />
+                                )}
                                 Refresh
                             </Button>
                         </div>
+
+                        <Tabs value={promoTab} onValueChange={(v) => setPromoTab(v as any)}>
+                            <TabsList>
+                                <TabsTrigger value="created">Created</TabsTrigger>
+                                <TabsTrigger value="runs">Runs</TabsTrigger>
+                            </TabsList>
+
+                            <TabsContent value="created" className="space-y-3">
+                                {promoCreatedError ? (
+                                    <div className="text-sm text-destructive" role="alert">
+                                        {promoCreatedError}
+                                    </div>
+                                ) : promoCreatedLoading ? (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Loading…
+                                    </div>
+                                ) : filteredCreated.length === 0 ? (
+                                    <div className="text-sm text-muted-foreground">No created campaigns found.</div>
+                                ) : (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Name</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead>Scheduled At</TableHead>
+                                                <TableHead>Template</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredCreated.map((c) => {
+                                                const id = campaignId(c);
+                                                return (
+                                                    <TableRow
+                                                        key={id}
+                                                        className="cursor-pointer"
+                                                        onClick={() => id && router.push(`/campaigns/${encodeURIComponent(id)}`)}
+                                                    >
+                                                        <TableCell>
+                                                            <div className="font-medium">{c.name}</div>
+                                                            <div className="text-xs text-muted-foreground">{id}</div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant={statusBadgeVariant(c.status)} className="gap-1">
+                                                                {statusIcon(c.status)}
+                                                                {c.status}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="text-sm">{c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : "—"}</TableCell>
+                                                        <TableCell className="text-sm">{c.template?.name || "—"}</TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                )}
+                            </TabsContent>
+
+                            <TabsContent value="runs" className="space-y-3">
+                                {promoRunsError ? (
+                                    <div className="text-sm text-destructive" role="alert">
+                                        {promoRunsError}
+                                    </div>
+                                ) : promoRunsLoading ? (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Loading…
+                                    </div>
+                                ) : filteredRuns.length === 0 ? (
+                                    <div className="text-sm text-muted-foreground">No runs found.</div>
+                                ) : (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Name</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead>Executed</TableHead>
+                                                <TableHead>Completed</TableHead>
+                                                <TableHead>Progress</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredRuns.map((c) => {
+                                                const id = campaignId(c);
+                                                const target = Number((c.metrics as any)?.targetCount || 0);
+                                                const sent = Number((c.metrics as any)?.sentCount || 0);
+                                                const failed = Number((c.metrics as any)?.failedCount || 0);
+                                                const denom = target > 0 ? target : 0;
+                                                const progress = denom > 0 ? Math.min(1, (sent + failed) / denom) : 0;
+                                                const pct = denom > 0 ? Math.round(progress * 100) : 0;
+
+                                                return (
+                                                    <TableRow
+                                                        key={id}
+                                                        className="cursor-pointer"
+                                                        onClick={() => id && router.push(`/campaigns/${encodeURIComponent(id)}`)}
+                                                    >
+                                                        <TableCell>
+                                                            <div className="font-medium">{c.name}</div>
+                                                            <div className="text-xs text-muted-foreground">{id}</div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant={statusBadgeVariant(c.status)} className="gap-1">
+                                                                {statusIcon(c.status)}
+                                                                {c.status}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="text-sm">{(c as any)?.executedAt ? new Date((c as any).executedAt).toLocaleString() : "—"}</TableCell>
+                                                        <TableCell className="text-sm">{(c as any)?.completedAt ? new Date((c as any).completedAt).toLocaleString() : "—"}</TableCell>
+                                                        <TableCell className="text-sm">
+                                                            <div className="space-y-1">
+                                                                <div className="flex justify-between">
+                                                                    <span>
+                                                                        {sent}/{target} sent
+                                                                    </span>
+                                                                    <span className="text-muted-foreground">{pct}%</span>
+                                                                </div>
+                                                                <div className="h-2 w-full rounded bg-gray-200 overflow-hidden">
+                                                                    <div className="h-2 bg-gray-900" style={{ width: `${pct}%` }} />
+                                                                </div>
+                                                                <div className="text-xs text-muted-foreground">Failed: {failed}</div>
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                )}
+                            </TabsContent>
+                        </Tabs>
                     </CardContent>
                 </Card>
-
-                {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                    </div>
-                ) : filteredCampaigns.length === 0 ? (
-                    <Card>
-                        <CardContent className="py-12">
-                            <div className="text-center">
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">No campaigns found</h3>
-                                <p className="text-gray-500 mb-4">Create a campaign to start sending.</p>
-                                <Button onClick={openCreate} className="gap-2">
-                                    <Plus className="h-4 w-4" />
-                                    New Campaign
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <Card>
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Scheduled At</TableHead>
-                                    <TableHead>Template</TableHead>
-                                    <TableHead>Reach</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredCampaigns.map((c) => {
-                                    const id = campaignId(c);
-                                    const reachReady = c.status !== "preparing";
-                                    const est = (c.audience as any)?.estimatedCount;
-                                    const target = (c.metrics as any)?.targetCount;
-                                    return (
-                                        <TableRow
-                                            key={id}
-                                            className="cursor-pointer"
-                                            onClick={() => id && router.push(`/campaigns/${encodeURIComponent(id)}`)}
-                                        >
-                                            <TableCell>
-                                                <div>
-                                                    <div className="font-medium">{c.name || id}</div>
-                                                    <div className="text-xs text-gray-500 break-all">{id}</div>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant={statusBadgeVariant(c.status)} className="capitalize">
-                                                    <span className="flex items-center gap-1">
-                                                        {statusIcon(c.status)}
-                                                        <span>{c.status}</span>
-                                                    </span>
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>{c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : "—"}</TableCell>
-                                            <TableCell className="break-all">{c.template?.name || "—"}</TableCell>
-                                            <TableCell>
-                                                {c.status === "preparing" ? (
-                                                    <span className="text-sm text-muted-foreground">Preparing audience…</span>
-                                                ) : !reachReady ? (
-                                                    "—"
-                                                ) : (
-                                                    <div className="text-sm">
-                                                        <div>Estimated: {typeof est === "number" ? est.toLocaleString() : "—"}</div>
-                                                        <div>Target: {typeof target === "number" ? target.toLocaleString() : "—"}</div>
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    </Card>
-                )}
             </main>
 
             <Dialog
