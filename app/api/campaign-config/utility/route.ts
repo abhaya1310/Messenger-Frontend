@@ -8,11 +8,8 @@ function getUserAuthHeaders(request: NextRequest): Record<string, string> | null
     const authorization = request.headers.get("authorization");
     if (!authorization) return null;
 
-    const orgIdHeader = request.headers.get("x-org-id");
-
     return {
         Authorization: authorization,
-        ...(orgIdHeader ? { "X-ORG-ID": orgIdHeader } : {}),
     };
 }
 

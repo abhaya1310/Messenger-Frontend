@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { clearAuth, getAuthToken, getCurrentOrgId } from "@/lib/auth";
+import { fetchCampaignConfig } from "@/lib/api";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } from "@/lib/types/campaign-definition";
 import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
@@ -109,6 +110,10 @@ export default function CampaignsClient() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const [createdCampaignsLoading, setCreatedCampaignsLoading] = useState(false);
+    const [createdCampaignsError, setCreatedCampaignsError] = useState<string | null>(null);
+    const [createdCampaigns, setCreatedCampaigns] = useState<Array<{ key: string; title: string; subtitle?: string }>>([]);
+
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<Campaign["status"] | "all">("all");
 
@@ -179,6 +184,53 @@ export default function CampaignsClient() {
                 );
             });
     }, [campaigns, searchQuery, statusFilter]);
+
+    const loadCreatedCampaigns = async () => {
+        setCreatedCampaignsError(null);
+        setCreatedCampaignsLoading(true);
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                setCreatedCampaigns([]);
+                return;
+            }
+
+            const cfg = await fetchCampaignConfig();
+            const next: Array<{ key: string; title: string; subtitle?: string }> = [];
+
+            if (cfg?.birthday?.enabled) next.push({ key: "birthday", title: "Birthday" });
+            if (cfg?.anniversary?.enabled) next.push({ key: "anniversary", title: "Anniversary" });
+            if (cfg?.firstVisit?.enabled) next.push({ key: "firstVisit", title: "First Visit" });
+
+            if (cfg?.winback?.enabled) {
+                const tiers = Array.isArray(cfg.winback?.tiers) ? cfg.winback.tiers : [];
+                const enabledTiers = tiers.filter((t: any) => Boolean(t?.enabled));
+                next.push({
+                    key: "winback",
+                    title: "Winback",
+                    subtitle: enabledTiers.length > 0 ? `${enabledTiers.length} tier(s) enabled` : undefined,
+                });
+            }
+
+            const festivals = Array.isArray(cfg?.festivals) ? cfg.festivals : [];
+            const enabledFestivals = festivals.filter((f: any) => Boolean(f?.enabled));
+            for (const f of enabledFestivals) {
+                const name = String((f as any)?.name || "Festival");
+                next.push({ key: `festival:${name}`, title: name });
+            }
+
+            if (cfg?.utility?.billMessaging?.enabled) next.push({ key: "utility.billMessaging", title: "Bill Messaging" });
+            if (cfg?.utility?.feedback?.enabled) next.push({ key: "utility.feedback", title: "Feedback" });
+            if (cfg?.utility?.reviewRequest?.enabled) next.push({ key: "utility.reviewRequest", title: "Review Request" });
+
+            setCreatedCampaigns(next);
+        } catch (e) {
+            setCreatedCampaigns([]);
+            setCreatedCampaignsError(e instanceof Error ? e.message : "Failed to load created campaigns");
+        } finally {
+            setCreatedCampaignsLoading(false);
+        }
+    };
 
     const stopPolling = () => {
         if (pollingRef.current) {
@@ -307,6 +359,11 @@ export default function CampaignsClient() {
         return () => stopPolling();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter]);
+
+    useEffect(() => {
+        loadCreatedCampaigns();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         if (!resolvedOrgId) return;
@@ -780,6 +837,39 @@ export default function CampaignsClient() {
                                         </div>
                                     );
                                 })}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card className="mb-6">
+                    <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
+                        <CardTitle className="text-base">Created Campaigns</CardTitle>
+                        <Button size="sm" variant="outline" onClick={loadCreatedCampaigns} disabled={createdCampaignsLoading} className="gap-2">
+                            {createdCampaignsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                            Refresh
+                        </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {createdCampaignsLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Loading…
+                            </div>
+                        ) : createdCampaignsError ? (
+                            <div className="text-sm text-destructive" role="alert">
+                                {createdCampaignsError}
+                            </div>
+                        ) : createdCampaigns.length === 0 ? (
+                            <div className="text-sm text-muted-foreground">No created campaigns enabled.</div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {createdCampaigns.map((c) => (
+                                    <div key={c.key} className="rounded-md border p-3">
+                                        <div className="font-medium">{c.title}</div>
+                                        {c.subtitle ? <div className="text-xs text-muted-foreground">{c.subtitle}</div> : null}
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </CardContent>

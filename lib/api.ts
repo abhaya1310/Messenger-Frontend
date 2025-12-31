@@ -254,11 +254,9 @@ export async function analyzeCsv(file: File, templateName?: string): Promise<Csv
     formData.append('templateName', templateName);
   }
 
-  const orgId = getCurrentOrgId();
   const token = getAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
   const res = await fetchWithErrorHandling(`${API_BASE}/api/csv/analyze`, {
     method: 'POST',
@@ -521,7 +519,7 @@ export async function fetchConversations(params: {
     throw new Error('fetchConversations can only be called from the client side');
   }
 
-  const url = new URL('/conversations', API_BASE);
+  const url = new URL('/api/conversations', API_BASE);
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined) {
@@ -533,11 +531,9 @@ export async function fetchConversations(params: {
     }
   });
 
-  const orgId = getCurrentOrgId();
   const token = getAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
   const res = await fetch(url.toString(), { headers });
   if (res.status === 401) {
@@ -583,7 +579,9 @@ export async function fetchConversationMessages(
     throw new Error('fetchConversationMessages can only be called from the client side');
   }
 
-  const url = new URL(`/conversations/${encodeURIComponent(phoneNumber)}/messages`, API_BASE);
+  const normalized = String(phoneNumber || '').trim();
+  const safePhone = normalized.startsWith('+') ? normalized : `+${normalized}`;
+  const url = new URL(`/api/conversations/${encodeURIComponent(safePhone)}/messages`, API_BASE);
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined) {
@@ -591,11 +589,9 @@ export async function fetchConversationMessages(
     }
   });
 
-  const orgId = getCurrentOrgId();
   const token = getAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (!token && orgId) headers['X-ORG-ID'] = orgId;
 
   const res = await fetch(url.toString(), { headers });
   if (res.status === 401) {
@@ -626,15 +622,15 @@ export async function updateConversationMetadata(
     throw new Error('updateConversationMetadata can only be called from the client side');
   }
 
-  const orgId = getCurrentOrgId();
   const token = getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (orgId) headers['X-ORG-ID'] = orgId;
 
-  const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(phoneNumber)}/metadata`, {
+  const normalized = String(phoneNumber || '').trim();
+  const safePhone = normalized.startsWith('+') ? normalized : `+${normalized}`;
+  const res = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(safePhone)}/metadata`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify(metadata),
@@ -748,7 +744,6 @@ export async function apiClient<T>(
   const token = getAuthToken();
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
 
@@ -756,7 +751,7 @@ export async function apiClient<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  if (orgId) {
+  if (orgId && !endpoint.startsWith('/api/campaign-config')) {
     headers['X-ORG-ID'] = orgId;
   }
 
