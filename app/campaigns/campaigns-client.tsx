@@ -23,6 +23,8 @@ import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } fr
 import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
 import { MessagePreview } from "@/components/message-preview";
 
+type ToastState = { type: "success" | "error"; message: string } | null;
+
 async function parseJsonSafe(res: Response) {
     const text = await res.text();
     try {
@@ -104,6 +106,14 @@ export default function CampaignsClient() {
 
     const [error, setError] = useState<string | null>(null);
 
+    const [toast, setToast] = useState<ToastState>(null);
+
+    const showToast = (next: ToastState) => {
+        setToast(next);
+        if (!next) return;
+        window.setTimeout(() => setToast(null), 2500);
+    };
+
     const [autoLoading, setAutoLoading] = useState(false);
     const [autoError, setAutoError] = useState<string | null>(null);
     const [autoGroups, setAutoGroups] = useState<{ auto: any[]; utility: any[] }>({ auto: [], utility: [] });
@@ -116,6 +126,10 @@ export default function CampaignsClient() {
     const [promoRunsLoading, setPromoRunsLoading] = useState(false);
     const [promoRunsError, setPromoRunsError] = useState<string | null>(null);
     const [promoRuns, setPromoRuns] = useState<Campaign[]>([]);
+
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const [searchQuery, setSearchQuery] = useState("");
 
@@ -205,11 +219,105 @@ export default function CampaignsClient() {
         }
     };
 
+    const confirmDelete = async () => {
+        const target = deleteTarget;
+        const id = target ? campaignId(target) : "";
+        if (!id) {
+            setDeleteOpen(false);
+            setDeleteTarget(null);
+            return;
+        }
+
+        if (deletingId) return;
+
+        const prevIndex = promoCreated.findIndex((c) => campaignId(c) === id);
+        setDeletingId(id);
+        setPromoCreated((prev) => prev.filter((c) => campaignId(c) !== id));
+
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                clearAuth();
+                router.push("/login?reason=session_expired");
+                return;
+            }
+
+            const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const payload = await parseJsonSafe(res);
+
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login?reason=session_expired");
+                return;
+            }
+
+            if (res.status === 200) {
+                showToast({ type: "success", message: "Campaign deleted" });
+                setDeleteOpen(false);
+                setDeleteTarget(null);
+                return;
+            }
+
+            if (res.status === 404) {
+                showToast({ type: "success", message: "Campaign already deleted" });
+                setDeleteOpen(false);
+                setDeleteTarget(null);
+                return;
+            }
+
+            const err = payload as any;
+            const code = String(err?.error || err?.code || err?.data?.error || "");
+            if (res.status === 409 && code === "campaign_not_deletable") {
+                showToast({ type: "error", message: "Campaign already started and cannot be deleted" });
+                setDeleteOpen(false);
+                setDeleteTarget(null);
+                await Promise.all([loadPromotionalCreated({ silent: true }), loadPromotionalRuns({ silent: true })]);
+                return;
+            }
+
+            showToast({ type: "error", message: "Failed to delete campaign. Please try again." });
+            setPromoCreated((current) => {
+                if (current.some((c) => campaignId(c) === id)) return current;
+                if (!target) return current;
+                const next = current.slice();
+                const idx = prevIndex >= 0 && prevIndex <= next.length ? prevIndex : 0;
+                next.splice(idx, 0, target);
+                return next;
+            });
+            setDeleteOpen(false);
+            setDeleteTarget(null);
+        } catch {
+            showToast({ type: "error", message: "Failed to delete campaign. Please try again." });
+            setPromoCreated((current) => {
+                if (current.some((c) => campaignId(c) === id)) return current;
+                if (!target) return current;
+                const next = current.slice();
+                const idx = prevIndex >= 0 && prevIndex <= next.length ? prevIndex : 0;
+                next.splice(idx, 0, target);
+                return next;
+            });
+            setDeleteOpen(false);
+            setDeleteTarget(null);
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
     const stopRunsPolling = () => {
         if (runsPollingRef.current) {
             window.clearInterval(runsPollingRef.current);
             runsPollingRef.current = null;
         }
+    };
+
+    const canDeleteCampaign = (c: Campaign) => {
+        return c.status === "draft" || c.status === "preparing" || c.status === "scheduled";
     };
 
     const loadAutoCampaigns = async () => {
@@ -779,6 +887,18 @@ export default function CampaignsClient() {
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <Breadcrumb items={[{ label: "Campaigns" }]} />
 
+                {toast && (
+                    <div
+                        className={
+                            "fixed bottom-4 right-4 z-50 rounded-md border px-4 py-3 shadow-lg text-sm " +
+                            (toast.type === "success" ? "bg-green-50 border-green-200 text-green-900" : "bg-red-50 border-red-200 text-red-900")
+                        }
+                        role="status"
+                    >
+                        {toast.message}
+                    </div>
+                )}
+
                 {error && (
                     <Card className="mb-6 border-destructive/30">
                         <CardContent className="pt-6">
@@ -959,11 +1079,14 @@ export default function CampaignsClient() {
                                                 <TableHead>Status</TableHead>
                                                 <TableHead>Scheduled At</TableHead>
                                                 <TableHead>Template</TableHead>
+                                                <TableHead className="text-right">Actions</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {filteredCreated.map((c) => {
                                                 const id = campaignId(c);
+                                                const canDelete = Boolean(id) && canDeleteCampaign(c);
+                                                const busy = deletingId === id;
                                                 return (
                                                     <TableRow
                                                         key={id}
@@ -982,6 +1105,27 @@ export default function CampaignsClient() {
                                                         </TableCell>
                                                         <TableCell className="text-sm">{c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : "—"}</TableCell>
                                                         <TableCell className="text-sm">{c.template?.name || "—"}</TableCell>
+                                                        <TableCell className="text-right">
+                                                            {canDelete ? (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    className="text-red-600 hover:text-red-700 gap-2"
+                                                                    disabled={busy}
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        setDeleteTarget(c);
+                                                                        setDeleteOpen(true);
+                                                                    }}
+                                                                >
+                                                                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                                                    Delete
+                                                                </Button>
+                                                            ) : (
+                                                                <span className="text-sm text-muted-foreground">—</span>
+                                                            )}
+                                                        </TableCell>
                                                     </TableRow>
                                                 );
                                             })}
@@ -1066,6 +1210,42 @@ export default function CampaignsClient() {
                     </CardContent>
                 </Card>
             </main>
+
+            <Dialog
+                open={deleteOpen}
+                onOpenChange={(open) => {
+                    setDeleteOpen(open);
+                    if (!open) {
+                        setDeleteTarget(null);
+                        setDeletingId(null);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete campaign?</DialogTitle>
+                        <DialogDescription>
+                            This will remove the campaign and any queued messages. This cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setDeleteOpen(false);
+                                setDeleteTarget(null);
+                            }}
+                            disabled={Boolean(deletingId)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={confirmDelete} disabled={Boolean(deletingId)} className="gap-2">
+                            {deletingId ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog
                 open={catalogPreviewOpen}

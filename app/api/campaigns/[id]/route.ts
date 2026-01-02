@@ -40,3 +40,23 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
     const data = await parseBackendResponse(res);
     return NextResponse.json(data, { status: res.status });
 }
+
+export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+    const authHeaders = getUserAuthHeaders(request);
+    if (!authHeaders) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await ctx.params;
+
+    const res = await fetch(`${getBackendBaseUrl()}/api/campaigns/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders,
+        },
+    });
+
+    const data = await parseBackendResponse(res);
+    return NextResponse.json(data, { status: res.status });
+}
