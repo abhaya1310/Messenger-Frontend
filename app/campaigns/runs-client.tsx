@@ -276,7 +276,6 @@ export default function CampaignRunsClient() {
 
             const headers: Record<string, string> = {
                 Authorization: `Bearer ${token}`,
-                ...(orgId ? { "X-ORG-ID": orgId } : {}),
             };
 
             const runsQs = new URLSearchParams();

@@ -751,7 +751,7 @@ export async function apiClient<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  if (orgId && !endpoint.startsWith('/api/campaign-config') && !endpoint.startsWith('/api/campaigns')) {
+  if (!token && orgId && !endpoint.startsWith('/api/campaign-config') && !endpoint.startsWith('/api/campaigns')) {
     headers['X-ORG-ID'] = orgId;
   }
 
@@ -871,20 +871,22 @@ export async function fetchCampaign(campaignId: string): Promise<Campaign> {
   return unwrapApiResponse<Campaign>(raw);
 }
 
-export async function fetchCampaignsCreated(params: { limit?: number; skip?: number } = {}): Promise<any> {
+export async function fetchCampaignsCreated(params: { limit?: number; skip?: number; status?: string } = {}): Promise<any> {
   const searchParams = new URLSearchParams();
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+  if (params.status !== undefined) searchParams.set('status', String(params.status));
   const query = searchParams.toString();
 
   const raw = await apiClient<any>(`/api/campaigns/created${query ? `?${query}` : ''}`);
   return unwrapApiResponse<any>(raw);
 }
 
-export async function fetchCampaignRuns(params: { limit?: number; skip?: number } = {}): Promise<any> {
+export async function fetchCampaignRuns(params: { limit?: number; skip?: number; status?: string } = {}): Promise<any> {
   const searchParams = new URLSearchParams();
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+  if (params.status !== undefined) searchParams.set('status', String(params.status));
   const query = searchParams.toString();
 
   const raw = await apiClient<any>(`/api/campaigns/runs${query ? `?${query}` : ''}`);

@@ -43,7 +43,7 @@ export interface Campaign {
   name: string;
   description?: string;
   type?: 'event' | 'promotional' | 'announcement';
-  status: 'draft' | 'preparing' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
+  status: 'draft' | 'preparing' | 'scheduled' | 'waiting_for_credits' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
   scheduledAt: string;
   executedAt?: string;
   completedAt?: string;
@@ -57,7 +57,7 @@ export interface Campaign {
 
 // API Request Types for One-Time Campaigns
 export interface CampaignListParams {
-  status?: 'draft' | 'preparing' | 'scheduled' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
+  status?: 'draft' | 'preparing' | 'scheduled' | 'waiting_for_credits' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
   type?: 'event' | 'promotional' | 'announcement';
   page?: number;
   limit?: number;

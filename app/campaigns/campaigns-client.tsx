@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +16,7 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
 import { clearAuth, getAuthToken } from "@/lib/auth";
-import { fetchCampaignConfigCreated, fetchCampaignRuns, fetchCampaignsCreated } from "@/lib/api";
+import { fetchCampaignRuns, fetchCampaignsCreated } from "@/lib/api";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } from "@/lib/types/campaign-definition";
 import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
@@ -44,6 +43,8 @@ function statusBadgeVariant(status: Campaign["status"]) {
             return "warning" as const;
         case "scheduled":
             return "outline" as const;
+        case "waiting_for_credits":
+            return "outline" as const;
         case "active":
             return "default" as const;
         case "completed":
@@ -66,6 +67,8 @@ function statusIcon(status: Campaign["status"]) {
             return <Loader2 className="h-4 w-4 animate-spin" />;
         case "scheduled":
             return <Calendar className="h-4 w-4" />;
+        case "waiting_for_credits":
+            return <Clock className="h-4 w-4" />;
         case "active":
             return <Clock className="h-4 w-4" />;
         case "completed":
@@ -113,10 +116,6 @@ export default function CampaignsClient() {
         if (!next) return;
         window.setTimeout(() => setToast(null), 2500);
     };
-
-    const [autoLoading, setAutoLoading] = useState(false);
-    const [autoError, setAutoError] = useState<string | null>(null);
-    const [autoGroups, setAutoGroups] = useState<{ auto: any[]; utility: any[] }>({ auto: [], utility: [] });
 
     const [promoTab, setPromoTab] = useState<"created" | "runs">("created");
     const [promoCreatedLoading, setPromoCreatedLoading] = useState(false);
@@ -320,34 +319,6 @@ export default function CampaignsClient() {
         return c.status === "draft" || c.status === "preparing" || c.status === "scheduled";
     };
 
-    const loadAutoCampaigns = async () => {
-        setAutoError(null);
-        setAutoLoading(true);
-        try {
-            const token = getAuthToken();
-            if (!token) {
-                setAutoGroups({ auto: [], utility: [] });
-                return;
-            }
-
-            const raw = await fetchCampaignConfigCreated();
-            const data: any = (raw as any)?.data ?? raw;
-            const items: any[] =
-                (Array.isArray(data?.items) ? data.items : null) ||
-                (Array.isArray((raw as any)?.items) ? (raw as any).items : null) ||
-                (Array.isArray(data) ? data : []);
-
-            const auto = items.filter((i) => String(i?.category || "").toLowerCase() === "auto");
-            const utility = items.filter((i) => String(i?.category || "").toLowerCase() === "utility");
-            setAutoGroups({ auto, utility });
-        } catch (e) {
-            setAutoGroups({ auto: [], utility: [] });
-            setAutoError(e instanceof Error ? e.message : "Failed to load auto campaigns");
-        } finally {
-            setAutoLoading(false);
-        }
-    };
-
     const loadPromotionalCreated = async (opts?: { silent?: boolean }) => {
         if (!opts?.silent) setPromoCreatedLoading(true);
         setPromoCreatedError(null);
@@ -447,7 +418,6 @@ export default function CampaignsClient() {
     };
 
     useEffect(() => {
-        loadAutoCampaigns();
         loadPromotionalCreated();
         loadPromotionalRuns();
         return () => {
@@ -458,8 +428,8 @@ export default function CampaignsClient() {
     }, []);
 
     useEffect(() => {
-        const anyPreparing = promoCreated.some((c) => c.status === "preparing");
-        if (!anyPreparing) {
+        const anyPending = promoCreated.some((c) => c.status === "preparing" || c.status === "scheduled" || c.status === "waiting_for_credits");
+        if (!anyPending) {
             stopCreatedPolling();
             return;
         }
@@ -471,8 +441,8 @@ export default function CampaignsClient() {
     }, [promoCreated]);
 
     useEffect(() => {
-        const anyActive = promoRuns.some((c) => c.status === "active");
-        if (!anyActive) {
+        const anyPolling = promoRuns.some((c) => c.status === "active" || c.status === "paused");
+        if (!anyPolling) {
             stopRunsPolling();
             return;
         }
@@ -869,12 +839,9 @@ export default function CampaignsClient() {
                     <div className="flex items-start justify-between gap-4 py-6">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900">Campaigns</h1>
-                            <p className="text-gray-600 mt-1">Create campaigns. Audience is prepared asynchronously by the backend.</p>
+                            <p className="text-gray-600 mt-1">Create promotional campaigns. Audience is prepared asynchronously by the backend.</p>
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="outline" asChild>
-                                <Link href="/campaigns/runs">Campaign Runs</Link>
-                            </Button>
                             <Button onClick={openCreate} className="gap-2">
                                 <Plus className="h-4 w-4" />
                                 New Campaign
@@ -959,62 +926,6 @@ export default function CampaignsClient() {
                                         </div>
                                     );
                                 })}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Card className="mb-6">
-                    <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
-                        <CardTitle className="text-base">Auto Campaigns</CardTitle>
-                        <Button size="sm" variant="outline" onClick={loadAutoCampaigns} disabled={autoLoading} className="gap-2">
-                            {autoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                            Refresh
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                        {autoLoading ? (
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Loading…
-                            </div>
-                        ) : autoError ? (
-                            <div className="text-sm text-destructive" role="alert">
-                                {autoError}
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <div>
-                                    <div className="text-sm font-medium">Auto</div>
-                                    {autoGroups.auto.length === 0 ? (
-                                        <div className="text-sm text-muted-foreground">No auto campaigns configured.</div>
-                                    ) : (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                                            {autoGroups.auto.map((i) => (
-                                                <div key={String(i?.key || i?.id || i?.name || Math.random())} className="rounded-md border p-3">
-                                                    <div className="font-medium">{String(i?.title || i?.name || i?.key || "Auto campaign")}</div>
-                                                    {i?.description ? <div className="text-xs text-muted-foreground">{String(i.description)}</div> : null}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <div className="text-sm font-medium">Utility</div>
-                                    {autoGroups.utility.length === 0 ? (
-                                        <div className="text-sm text-muted-foreground">No utility campaigns configured.</div>
-                                    ) : (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                                            {autoGroups.utility.map((i) => (
-                                                <div key={String(i?.key || i?.id || i?.name || Math.random())} className="rounded-md border p-3">
-                                                    <div className="font-medium">{String(i?.title || i?.name || i?.key || "Utility campaign")}</div>
-                                                    {i?.description ? <div className="text-xs text-muted-foreground">{String(i.description)}</div> : null}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
                             </div>
                         )}
                     </CardContent>
@@ -1331,14 +1242,12 @@ export default function CampaignsClient() {
 
                             <div className="space-y-2">
                                 <Label>Type *</Label>
-                                <Select value={createType} onValueChange={(v) => setCreateType(v as any)}>
+                                <Select value={createType} onValueChange={(v) => setCreateType(v as any)} disabled>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="promotional">Promotional</SelectItem>
-                                        <SelectItem value="event">Event</SelectItem>
-                                        <SelectItem value="announcement">Announcement</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

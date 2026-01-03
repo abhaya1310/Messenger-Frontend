@@ -26,6 +26,8 @@ function statusBadgeVariant(status: Campaign["status"]) {
             return "warning" as const;
         case "scheduled":
             return "outline" as const;
+        case "waiting_for_credits":
+            return "outline" as const;
         case "active":
             return "default" as const;
         case "completed":
@@ -48,6 +50,8 @@ function statusIcon(status: Campaign["status"]) {
             return <Loader2 className="h-4 w-4 animate-spin" />;
         case "scheduled":
             return <Calendar className="h-4 w-4" />;
+        case "waiting_for_credits":
+            return <Clock className="h-4 w-4" />;
         case "active":
             return <Clock className="h-4 w-4" />;
         case "completed":
@@ -116,7 +120,7 @@ export default function CampaignDetailPage() {
             const data = ((json as any)?.data || json) as Campaign;
             setCampaign(data);
 
-            if (data?.status === "preparing") {
+            if (data?.status === "preparing" || data?.status === "scheduled" || data?.status === "waiting_for_credits") {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => load({ silent: true }), 7000);
                 }
@@ -208,6 +212,13 @@ export default function CampaignDetailPage() {
                                     <div className="rounded-md border p-3">
                                         <div className="text-sm font-medium">Preparing audience…</div>
                                         <div className="text-sm text-muted-foreground">This may take a moment depending on audience size.</div>
+                                    </div>
+                                ) : null}
+
+                                {campaign.status === "waiting_for_credits" ? (
+                                    <div className="rounded-md border p-3">
+                                        <div className="text-sm font-medium">Waiting for credits…</div>
+                                        <div className="text-sm text-muted-foreground">Please top up credits to start this campaign.</div>
                                     </div>
                                 ) : null}
 
