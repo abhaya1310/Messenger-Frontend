@@ -44,7 +44,11 @@ export interface CampaignDefinition {
 
 export interface CampaignDefinitionListResponse {
     success: boolean;
-    data: CampaignDefinition[];
+    data:
+    | CampaignDefinition[]
+    | {
+        items: CampaignDefinition[];
+    };
 }
 
 export interface CampaignDefinitionSingleResponse {

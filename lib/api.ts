@@ -724,6 +724,7 @@ import type {
   CampaignAnalytics,
   CustomerAnalytics,
 } from './types/campaign';
+import type { CampaignDefinition, CampaignDefinitionListResponse } from './types/campaign-definition';
 import type {
   OrgSettings,
   ServiceUpdate,
@@ -833,6 +834,21 @@ export async function fetchSyncStatus(): Promise<SyncStatus> {
 // ============================================================================
 // Campaign API Functions
 // ============================================================================
+
+/**
+ * Fetch list of published campaign definitions (campaign catalog for end users)
+ */
+export async function fetchCampaignDefinitions(): Promise<CampaignDefinition[]> {
+  const raw = await apiClient<CampaignDefinitionListResponse | any>('/api/campaign-definitions');
+  const data = unwrapApiResponse<any>(raw);
+
+  const items =
+    (data && typeof data === 'object' && Array.isArray((data as any).items) ? (data as any).items : null) ??
+    (Array.isArray(data) ? data : null) ??
+    [];
+
+  return items as CampaignDefinition[];
+}
 
 /**
  * Fetch list of campaigns

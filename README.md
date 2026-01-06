@@ -34,7 +34,9 @@ This is a **Next.js 15** application built with:
 - **Admin Portal (role-based)**
   - Admin routes under `/admin/*` are guarded client-side via `GET /api/auth/me` and require `user.role === "admin"`.
   - Admin org context is persisted as `selectedOrgId` in localStorage.
-  - Admin UI calls `/api/admin/*` Next.js route handlers, passing `Authorization: Bearer <accessToken>` and (for org-scoped calls) `X-ORG-ID: <orgId>`.
+  - Admin UI calls `/api/admin/*` Next.js route handlers, passing `Authorization: Bearer <accessToken>`.
+  - For org-scoped admin calls, the selected org is typically passed via `X-ORG-ID: <orgId>` (admin context only).
+  - Admin proxies support `Authorization` (preferred) and `X-ADMIN-TOKEN` (fallback).
   - Admin onboarding flow: create org + invite user email to generate an **access code** (see `/admin/orgs/new`).
   - Admin credits operations:
     - Org list with credits summary (`/admin/orgs`) via `GET /api/admin/whatsapp/orgs`
@@ -48,13 +50,23 @@ This is a **Next.js 15** application built with:
 - **Templates + Bulk Send**
   - Browse templates (`/templates`).
   - CSV upload + intelligent mapping + preview + batched sending (`/templates/[templateName]/send`).
-- **Campaigns**
-  - Create and schedule campaigns (`/campaigns`).
-  - Campaign run scheduling includes a credits precheck and can show `waiting_for_credits` when a run is queued but awaiting credit availability.
-  - Campaign catalog:
-    - Admins manage reusable campaign definitions at `/admin/campaigns`.
-    - Users pick from the catalog and create runs at `/campaigns`.
-    - Definitions store a template preview payload (`template.preview`) with sample values; the backend computes `template.preview.message`, which is shown on the user-facing catalog cards.
+- **Campaigns (Option A — Promotional Campaigns)**
+  - User-facing campaigns live at `/campaigns`.
+  - Data contract:
+    - List: `GET /api/campaigns?tab=created|runs&limit=...&skip=...` (optional `status=...`)
+    - Create: `POST /api/campaigns`
+    - Detail: `GET /api/campaigns/:id`
+  - Progress is rendered using `executionStats`:
+    - `enqueued / matched` (capped at 100%)
+    - `skippedMissing` shown as “Skipped”
+  - Statuses include `preparing`, `scheduled`, `waiting_for_credits`, `active`, `paused`, `completed`, `cancelled`, `failed`.
+  - The UI polls every ~7s while a campaign is in `preparing|scheduled|active|waiting_for_credits`.
+
+- **Campaign Catalog (Definitions) + Legacy Campaign Runs**
+  - The reusable campaign catalog shown in `/campaigns` is still backed by **campaign definitions**:
+    - User-visible definitions are loaded via `GET /api/campaign-runs/definitions`.
+    - Definition details are loaded via `GET /api/campaign-runs/definitions/:id`.
+  - The separate “Campaign Runs” workflow lives under `/api/campaign-runs/*` and is treated as legacy/parallel functionality.
 - **Feedback Templates (Definitions)**
   - Admins manage reusable feedback definitions at `/admin/feedback-definitions`.
   - Users select a published feedback definition for utility messaging configuration (e.g. via `/feedback` and `/auto-campaigns`).
@@ -163,7 +175,8 @@ They forward admin/user auth headers as needed.
 Org scoping notes:
 
 - Most end-user flows use a user JWT (`Authorization: Bearer <token>`).
-- Some endpoints additionally require `X-ORG-ID: <orgId>` for correct tenant resolution.
+- Some admin endpoints additionally require `X-ORG-ID: <orgId>` for correct tenant resolution.
+- **Campaigns (`/api/campaigns`) and Campaign Runs (`/api/campaign-runs/*`) use JWT-only in this frontend (no `X-ORG-ID`).**
 
 ### Campaign Catalog (Definitions) + Runs
 
@@ -193,8 +206,8 @@ The campaign catalog is built from **campaign definitions** created in the admin
 Campaign Runs capabilities:
 
 - `GET /api/campaign-runs/capabilities` returns feature flags for the current org.
-- The frontend sends `Authorization: Bearer <token>` and `X-ORG-ID: <orgId>`.
-- The Next.js proxy route forwards both headers to the backend.
+- The frontend sends `Authorization: Bearer <token>`.
+- The Next.js proxy route forwards auth headers to the backend.
 
 ### Feedback Templates (Definitions)
 

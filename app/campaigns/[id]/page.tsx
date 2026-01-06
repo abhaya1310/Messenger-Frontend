@@ -160,6 +160,10 @@ export default function CampaignDetailPage() {
 
     const est = (campaign as any)?.audience?.estimatedCount;
     const target = (campaign as any)?.metrics?.targetCount;
+    const sent = (campaign as any)?.metrics?.sentCount;
+    const delivered = (campaign as any)?.metrics?.deliveredCount;
+    const read = (campaign as any)?.metrics?.readCount;
+    const failed = (campaign as any)?.metrics?.failedCount;
     const { matched, enqueued, skippedMissing } = getProgressNumbers(campaign);
     const denom = matched > 0 ? matched : 0;
     const progress = denom > 0 ? Math.min(1, enqueued / denom) : 0;
@@ -280,6 +284,13 @@ export default function CampaignDetailPage() {
                                             </div>
                                             <div className="h-2 w-full rounded bg-gray-200 overflow-hidden">
                                                 <div className="h-2 bg-gray-900" style={{ width: `${pct}%` }} />
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                                Target: {typeof target === "number" ? target.toLocaleString() : "—"}
+                                                {" · "}Sent: {typeof sent === "number" ? sent.toLocaleString() : "—"}
+                                                {" · "}Delivered: {typeof delivered === "number" ? delivered.toLocaleString() : "—"}
+                                                {" · "}Read: {typeof read === "number" ? read.toLocaleString() : "—"}
+                                                {" · "}Failed: {typeof failed === "number" ? failed.toLocaleString() : "—"}
                                             </div>
                                             <div className="text-xs text-muted-foreground">Skipped: {skippedMissing}</div>
                                         </div>

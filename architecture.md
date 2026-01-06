@@ -128,7 +128,7 @@ Tenant scoping:
 
 - For most end-user UI requests, the backend can infer `orgId` from the JWT.
 - Some endpoints additionally require `X-ORG-ID: <orgId>` for correct tenant resolution (even when a JWT is present).
-- Campaign Runs capabilities (`GET /api/campaign-runs/capabilities`) is treated as org-aware and should be called with both `Authorization: Bearer <token>` and `X-ORG-ID: <orgId>`.
+- **Campaigns (`/api/campaigns`) and Campaign Runs (`/api/campaign-runs/*`) use JWT-only in this frontend (no `X-ORG-ID`).**
 - **Temporary backend constraint**: for admin proxy calls under `/api/admin/**`, the frontend currently always forwards `X-ORG-ID` (even when the admin JWT is present), because many admin endpoints still select tenant via the header.
 
 ### Admin Portal Auth (role-based)
@@ -220,6 +220,10 @@ Current proxy routes:
 - `app/api/feedback/send/route.ts`
 - `app/api/feedback/preview/route.ts`
 
+Note:
+
+- `app/api/README.md` currently labels these proxy routes as deprecated, but in the current codebase they are still actively used for `/api/admin/*`, `/api/campaign-runs/*`, credits endpoints, and multipart uploads.
+
 Admin proxy routes:
 
 - `app/api/admin/orgs/route.ts`
@@ -304,8 +308,13 @@ The repo includes `app/api/README.md` marking these as deprecated; treat that fi
 ### 4) Campaigns
 
 - Route: `/campaigns`
-- Uses `lib/api.ts` campaign functions (via `apiClient()`)
-- Uses org + token headers when available
+- Promotional Campaigns (Option A) use `lib/api.ts` campaign functions (via `apiClient()`)
+- Data contract:
+  - `GET /api/campaigns?tab=created|runs&limit=...&skip=...` (optional `status=...`)
+  - `POST /api/campaigns`
+  - `GET /api/campaigns/:id`
+- Headers: `Authorization: Bearer <token>` (no `X-ORG-ID`)
+- Progress UI uses `executionStats.enqueued/matched` (capped at 100%) and `executionStats.skippedMissing` (“Skipped”)
 
 #### Campaign Catalog (Definitions) lifecycle
 
