@@ -33,7 +33,7 @@ const DateTimePicker = React.forwardRef<HTMLDivElement, DateTimePickerProps>(
             const month = String(date.getMonth() + 1).padStart(2, "0");
             const day = String(date.getDate()).padStart(2, "0");
             setDateValue(`${year}-${month}-${day}`);
-            
+
             // Format for time input (HH:MM)
             const hours = String(date.getHours()).padStart(2, "0");
             const minutes = String(date.getMinutes()).padStart(2, "0");
@@ -59,14 +59,26 @@ const DateTimePicker = React.forwardRef<HTMLDivElement, DateTimePickerProps>(
 
     const emitChange = (date: string, time: string) => {
       if (date && time && onChange) {
-        // Combine date and time into ISO string
-        const combined = new Date(`${date}T${time}`);
+        const [yearS, monthS, dayS] = date.split("-");
+        const [hourS, minuteS] = time.split(":");
+        const year = Number(yearS);
+        const monthIndex = Number(monthS) - 1;
+        const day = Number(dayS);
+        const hour = Number(hourS);
+        const minute = Number(minuteS);
+
+        const combined = new Date(year, monthIndex, day, hour, minute, 0, 0);
         if (!isNaN(combined.getTime())) {
           onChange(combined.toISOString());
         }
       } else if (date && onChange) {
         // If only date is set, use start of day
-        const dateOnly = new Date(`${date}T00:00`);
+        const [yearS, monthS, dayS] = date.split("-");
+        const year = Number(yearS);
+        const monthIndex = Number(monthS) - 1;
+        const day = Number(dayS);
+
+        const dateOnly = new Date(year, monthIndex, day, 0, 0, 0, 0);
         if (!isNaN(dateOnly.getTime())) {
           onChange(dateOnly.toISOString());
         }
