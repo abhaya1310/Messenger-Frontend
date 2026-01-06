@@ -16,7 +16,7 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, RefreshCcw, Search, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
 import { clearAuth, getAuthToken } from "@/lib/auth";
-import { fetchCampaignRuns, fetchCampaignsCreated } from "@/lib/api";
+import { fetchCampaigns } from "@/lib/api";
 import type { Campaign, CreateCampaignRequest } from "@/lib/types/campaign";
 import type { CampaignDefinition, CampaignDefinitionTemplateVariableMapping } from "@/lib/types/campaign-definition";
 import type { CampaignDefinitionSummary } from "@/lib/types/campaign-run";
@@ -35,6 +35,23 @@ async function parseJsonSafe(res: Response) {
 
 function campaignId(c: Campaign): string {
     return String((c as any)?._id || (c as any)?.id || "");
+}
+
+function campaignTemplateName(c: Campaign): string {
+    const ref = (c as any)?.campaignDefinitionId;
+    const populatedTemplateName = ref && typeof ref === "object" ? (ref as any)?.template?.name : undefined;
+    return String(populatedTemplateName || (c as any)?.template?.name || "—");
+}
+
+function getProgressNumbers(c: Campaign): { matched: number; enqueued: number; skippedMissing: number } {
+    const matched = Number((c as any)?.executionStats?.matched ?? 0);
+    const enqueued = Number((c as any)?.executionStats?.enqueued ?? 0);
+    const skippedMissing = Number((c as any)?.executionStats?.skippedMissing ?? 0);
+    return {
+        matched: Number.isFinite(matched) ? matched : 0,
+        enqueued: Number.isFinite(enqueued) ? enqueued : 0,
+        skippedMissing: Number.isFinite(skippedMissing) ? skippedMissing : 0,
+    };
 }
 
 function statusBadgeVariant(status: Campaign["status"]) {
@@ -80,21 +97,6 @@ function statusIcon(status: Campaign["status"]) {
         default:
             return <Clock className="h-4 w-4" />;
     }
-}
-
-function safeNumber(value: string): number | undefined {
-    const v = String(value || "").trim();
-    if (!v) return undefined;
-    const n = Number(v);
-    if (!Number.isFinite(n)) return undefined;
-    return n;
-}
-
-function parseCsv(value: string): string[] {
-    return (value || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
 }
 
 function parsePhoneList(value: string): string[] {
@@ -157,13 +159,6 @@ export default function CampaignsClient() {
 
     const [createAudienceType, setCreateAudienceType] = useState<CreateCampaignRequest["audience"]["type"]>("all");
 
-    const [createMinVisits, setCreateMinVisits] = useState("");
-    const [createMaxDaysSinceLastVisit, setCreateMaxDaysSinceLastVisit] = useState("");
-    const [createMinTotalSpend, setCreateMinTotalSpend] = useState("");
-    const [createOutletsCsv, setCreateOutletsCsv] = useState("");
-    const [createHasEmail, setCreateHasEmail] = useState<"any" | "true" | "false">("any");
-    const [createHasBirthday, setCreateHasBirthday] = useState<"any" | "true" | "false">("any");
-
     const [segments, setSegments] = useState<Array<{ id: string; name: string; status?: string }>>([]);
     const [segmentsLoading, setSegmentsLoading] = useState(false);
     const [segmentsError, setSegmentsError] = useState<string | null>(null);
@@ -193,7 +188,7 @@ export default function CampaignsClient() {
             if (!q) return true;
             return (
                 (c.name || "").toLowerCase().includes(q) ||
-                (c.template?.name || "").toLowerCase().includes(q) ||
+                campaignTemplateName(c).toLowerCase().includes(q) ||
                 campaignId(c).toLowerCase().includes(q)
             );
         });
@@ -205,7 +200,7 @@ export default function CampaignsClient() {
             if (!q) return true;
             return (
                 (c.name || "").toLowerCase().includes(q) ||
-                (c.template?.name || "").toLowerCase().includes(q) ||
+                campaignTemplateName(c).toLowerCase().includes(q) ||
                 campaignId(c).toLowerCase().includes(q)
             );
         });
@@ -332,14 +327,8 @@ export default function CampaignsClient() {
                 return;
             }
 
-            const res = await fetchCampaignsCreated({ limit: 50, skip: 0 });
-            const data: any = (res as any)?.data ?? res;
-            const items: any[] =
-                (Array.isArray(data?.items) ? data.items : null) ||
-                (Array.isArray((res as any)?.items) ? (res as any).items : null) ||
-                (Array.isArray(data) ? data : []);
-
-            setPromoCreated(items as Campaign[]);
+            const res = await fetchCampaigns({ tab: "created", limit: 50, skip: 0 } as any);
+            setPromoCreated((res as any)?.campaigns || []);
         } catch (e) {
             setPromoCreated([]);
             setPromoCreatedError(e instanceof Error ? e.message : "Failed to load created campaigns");
@@ -361,14 +350,8 @@ export default function CampaignsClient() {
                 return;
             }
 
-            const res = await fetchCampaignRuns({ limit: 50, skip: 0 });
-            const data: any = (res as any)?.data ?? res;
-            const items: any[] =
-                (Array.isArray(data?.items) ? data.items : null) ||
-                (Array.isArray((res as any)?.items) ? (res as any).items : null) ||
-                (Array.isArray(data) ? data : []);
-
-            setPromoRuns(items as Campaign[]);
+            const res = await fetchCampaigns({ tab: "runs", limit: 50, skip: 0 } as any);
+            setPromoRuns((res as any)?.campaigns || []);
         } catch (e) {
             setPromoRuns([]);
             setPromoRunsError(e instanceof Error ? e.message : "Failed to load campaign runs");
@@ -428,8 +411,14 @@ export default function CampaignsClient() {
     }, []);
 
     useEffect(() => {
-        const anyPending = promoCreated.some((c) => c.status === "preparing" || c.status === "scheduled" || c.status === "waiting_for_credits");
-        if (!anyPending) {
+        const anyPolling = promoCreated.some(
+            (c) =>
+                c.status === "preparing" ||
+                c.status === "scheduled" ||
+                c.status === "active" ||
+                c.status === "waiting_for_credits"
+        );
+        if (!anyPolling) {
             stopCreatedPolling();
             return;
         }
@@ -441,7 +430,14 @@ export default function CampaignsClient() {
     }, [promoCreated]);
 
     useEffect(() => {
-        const anyPolling = promoRuns.some((c) => c.status === "active" || c.status === "paused");
+        const anyPolling = promoRuns.some(
+            (c) =>
+                c.status === "preparing" ||
+                c.status === "scheduled" ||
+                c.status === "active" ||
+                c.status === "waiting_for_credits" ||
+                c.status === "paused"
+        );
         if (!anyPolling) {
             stopRunsPolling();
             return;
@@ -449,7 +445,7 @@ export default function CampaignsClient() {
         if (runsPollingRef.current) return;
         runsPollingRef.current = window.setInterval(() => {
             loadPromotionalRuns({ silent: true });
-        }, 15000);
+        }, 7000);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [promoRuns]);
 
@@ -472,12 +468,6 @@ export default function CampaignsClient() {
         setCreateScheduledAt("");
 
         setCreateAudienceType("all");
-        setCreateMinVisits("");
-        setCreateMaxDaysSinceLastVisit("");
-        setCreateMinTotalSpend("");
-        setCreateOutletsCsv("");
-        setCreateHasEmail("any");
-        setCreateHasBirthday("any");
 
         setCreateCustomPhoneNumbersRaw("");
         setCreateSegmentId("");
@@ -641,6 +631,26 @@ export default function CampaignsClient() {
             return;
         }
 
+        if (createAudienceType === "custom") {
+            const nonUserInput = mappingList.find((m) => String(m.sourceType || "").toLowerCase() !== "user_input");
+            if (nonUserInput) {
+                setError("Custom audience campaigns require all template variables to be user inputs");
+                return;
+            }
+
+            const positions = mappingList
+                .map((m) => Number(m.position))
+                .filter((n) => Number.isFinite(n) && n > 0)
+                .sort((a, b) => a - b);
+            const maxPos = positions.length > 0 ? positions[positions.length - 1] : 0;
+            for (let i = 1; i <= maxPos; i++) {
+                if (!mappingList.some((m) => Number(m.position) === i)) {
+                    setError(`Template variable mappings must include position ${i}`);
+                    return;
+                }
+            }
+        }
+
         for (const m of userInputMappings) {
             const required = m.required !== false;
             if (!required) continue;
@@ -674,22 +684,6 @@ export default function CampaignsClient() {
                 Authorization: `Bearer ${token}`,
             };
 
-            const filters: any = {};
-            const minVisits = safeNumber(createMinVisits);
-            if (minVisits !== undefined) filters.minVisits = minVisits;
-
-            const maxDaysSinceLastVisit = safeNumber(createMaxDaysSinceLastVisit);
-            if (maxDaysSinceLastVisit !== undefined) filters.maxDaysSinceLastVisit = maxDaysSinceLastVisit;
-
-            const minTotalSpend = safeNumber(createMinTotalSpend);
-            if (minTotalSpend !== undefined) filters.minTotalSpend = minTotalSpend;
-
-            const outlets = parseCsv(createOutletsCsv);
-            if (outlets.length > 0) filters.outlets = outlets;
-
-            if (createHasEmail !== "any") filters.hasEmail = createHasEmail === "true";
-            if (createHasBirthday !== "any") filters.hasBirthday = createHasBirthday === "true";
-
             const cleanedUserInputs: Record<string, string> = {};
             for (const m of userInputMappings) {
                 const val = String(userInputValues?.[m.position] ?? "").trim();
@@ -710,9 +704,7 @@ export default function CampaignsClient() {
                         ? { customPhoneNumbers: parsePhoneList(createCustomPhoneNumbersRaw) }
                         : createAudienceType === "segment"
                             ? { segmentId: createSegmentId }
-                            : Object.keys(filters).length > 0
-                                ? { filters }
-                                : {}),
+                            : {}),
                 },
             };
 
@@ -1015,7 +1007,7 @@ export default function CampaignsClient() {
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell className="text-sm">{c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : "—"}</TableCell>
-                                                        <TableCell className="text-sm">{c.template?.name || "—"}</TableCell>
+                                                        <TableCell className="text-sm">{campaignTemplateName(c)}</TableCell>
                                                         <TableCell className="text-right">
                                                             {canDelete ? (
                                                                 <Button
@@ -1071,11 +1063,9 @@ export default function CampaignsClient() {
                                         <TableBody>
                                             {filteredRuns.map((c) => {
                                                 const id = campaignId(c);
-                                                const target = Number((c.metrics as any)?.targetCount || 0);
-                                                const sent = Number((c.metrics as any)?.sentCount || 0);
-                                                const failed = Number((c.metrics as any)?.failedCount || 0);
-                                                const denom = target > 0 ? target : 0;
-                                                const progress = denom > 0 ? Math.min(1, (sent + failed) / denom) : 0;
+                                                const { matched, enqueued, skippedMissing } = getProgressNumbers(c);
+                                                const denom = matched > 0 ? matched : 0;
+                                                const progress = denom > 0 ? Math.min(1, enqueued / denom) : 0;
                                                 const pct = denom > 0 ? Math.round(progress * 100) : 0;
 
                                                 return (
@@ -1100,14 +1090,18 @@ export default function CampaignsClient() {
                                                             <div className="space-y-1">
                                                                 <div className="flex justify-between">
                                                                     <span>
-                                                                        {sent}/{target} sent
+                                                                        {enqueued}/{matched} enqueued
                                                                     </span>
                                                                     <span className="text-muted-foreground">{pct}%</span>
                                                                 </div>
                                                                 <div className="h-2 w-full rounded bg-gray-200 overflow-hidden">
                                                                     <div className="h-2 bg-gray-900" style={{ width: `${pct}%` }} />
                                                                 </div>
-                                                                <div className="text-xs text-muted-foreground">Failed: {failed}</div>
+                                                                {skippedMissing > 0 ? (
+                                                                    <div className="text-xs text-muted-foreground">Skipped: {skippedMissing}</div>
+                                                                ) : (
+                                                                    <div className="text-xs text-muted-foreground">Skipped: 0</div>
+                                                                )}
                                                             </div>
                                                         </TableCell>
                                                     </TableRow>
@@ -1374,7 +1368,7 @@ export default function CampaignsClient() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All (filters)</SelectItem>
+                                        <SelectItem value="all">All guests</SelectItem>
                                         <SelectItem value="segment">Segment</SelectItem>
                                         <SelectItem value="custom">Custom phone numbers</SelectItem>
                                     </SelectContent>
@@ -1438,72 +1432,6 @@ export default function CampaignsClient() {
                                     ) : null}
                                     <div className="text-xs text-muted-foreground">
                                         Segment computation happens on-demand when you create the campaign.
-                                    </div>
-                                </div>
-                            ) : null}
-
-                            {createAudienceType === "all" ? (
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="space-y-2">
-                                            <Label>Min Visits</Label>
-                                            <Input value={createMinVisits} onChange={(e) => setCreateMinVisits(e.target.value)} placeholder="e.g. 3" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Max Days Since Last Visit</Label>
-                                            <Input
-                                                value={createMaxDaysSinceLastVisit}
-                                                onChange={(e) => setCreateMaxDaysSinceLastVisit(e.target.value)}
-                                                placeholder="e.g. 60"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Min Total Spend</Label>
-                                            <Input
-                                                value={createMinTotalSpend}
-                                                onChange={(e) => setCreateMinTotalSpend(e.target.value)}
-                                                placeholder="e.g. 5000"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label>Outlets (comma separated outlet IDs)</Label>
-                                        <Input value={createOutletsCsv} onChange={(e) => setCreateOutletsCsv(e.target.value)} placeholder="outlet_1,outlet_2" />
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <Label>Has Email</Label>
-                                            <Select value={createHasEmail} onValueChange={(v) => setCreateHasEmail(v as any)}>
-                                                <SelectTrigger>
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="any">Any</SelectItem>
-                                                    <SelectItem value="true">Yes</SelectItem>
-                                                    <SelectItem value="false">No</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label>Has Birthday</Label>
-                                            <Select value={createHasBirthday} onValueChange={(v) => setCreateHasBirthday(v as any)}>
-                                                <SelectTrigger>
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="any">Any</SelectItem>
-                                                    <SelectItem value="true">Yes</SelectItem>
-                                                    <SelectItem value="false">No</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <div className="text-xs text-muted-foreground">
-                                        Audience count is computed by the backend after campaign creation.
                                     </div>
                                 </div>
                             ) : null}

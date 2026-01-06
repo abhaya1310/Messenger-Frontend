@@ -37,6 +37,24 @@ export interface CampaignMetrics {
   respondedCount?: number;
 }
 
+export interface CampaignExecutionStats {
+  matched?: number;
+  enqueued?: number;
+  skippedMissing?: number;
+}
+
+export interface PopulatedCampaignDefinitionRef {
+  _id?: string;
+  id?: string;
+  key?: string;
+  name?: string;
+  template?: {
+    name?: string;
+    language?: string;
+    preview?: any;
+  };
+}
+
 export interface Campaign {
   _id: string;
   orgId: string;
@@ -47,6 +65,9 @@ export interface Campaign {
   scheduledAt: string;
   executedAt?: string;
   completedAt?: string;
+  campaignDefinitionId?: string | PopulatedCampaignDefinitionRef;
+  executionCursor?: number;
+  executionStats?: CampaignExecutionStats;
   template: CampaignTemplate;
   audience: CampaignAudience;
   metrics: CampaignMetrics;
@@ -59,6 +80,8 @@ export interface Campaign {
 export interface CampaignListParams {
   status?: 'draft' | 'preparing' | 'scheduled' | 'waiting_for_credits' | 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
   type?: 'event' | 'promotional' | 'announcement';
+  tab?: 'all' | 'created' | 'runs';
+  skip?: number;
   page?: number;
   limit?: number;
 }

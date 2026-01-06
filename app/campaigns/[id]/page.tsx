@@ -20,6 +20,17 @@ async function parseJsonSafe(res: Response) {
     }
 }
 
+function getProgressNumbers(c: Campaign | null): { matched: number; enqueued: number; skippedMissing: number } {
+    const matched = Number((c as any)?.executionStats?.matched ?? 0);
+    const enqueued = Number((c as any)?.executionStats?.enqueued ?? 0);
+    const skippedMissing = Number((c as any)?.executionStats?.skippedMissing ?? 0);
+    return {
+        matched: Number.isFinite(matched) ? matched : 0,
+        enqueued: Number.isFinite(enqueued) ? enqueued : 0,
+        skippedMissing: Number.isFinite(skippedMissing) ? skippedMissing : 0,
+    };
+}
+
 function statusBadgeVariant(status: Campaign["status"]) {
     switch (status) {
         case "preparing":
@@ -120,16 +131,14 @@ export default function CampaignDetailPage() {
             const data = ((json as any)?.data || json) as Campaign;
             setCampaign(data);
 
-            if (data?.status === "preparing" || data?.status === "scheduled" || data?.status === "waiting_for_credits") {
+            if (
+                data?.status === "preparing" ||
+                data?.status === "scheduled" ||
+                data?.status === "active" ||
+                data?.status === "waiting_for_credits"
+            ) {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => load({ silent: true }), 7000);
-                }
-                return;
-            }
-
-            if (data?.status === "active") {
-                if (!pollingRef.current) {
-                    pollingRef.current = window.setInterval(() => load({ silent: true }), 15000);
                 }
                 return;
             }
@@ -151,6 +160,10 @@ export default function CampaignDetailPage() {
 
     const est = (campaign as any)?.audience?.estimatedCount;
     const target = (campaign as any)?.metrics?.targetCount;
+    const { matched, enqueued, skippedMissing } = getProgressNumbers(campaign);
+    const denom = matched > 0 ? matched : 0;
+    const progress = denom > 0 ? Math.min(1, enqueued / denom) : 0;
+    const pct = denom > 0 ? Math.round(progress * 100) : 0;
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -254,6 +267,22 @@ export default function CampaignDetailPage() {
                                                 Target: {typeof target === "number" ? target.toLocaleString() : "—"}
                                             </div>
                                         )}
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                        <div className="text-muted-foreground">Progress</div>
+                                        <div className="space-y-1">
+                                            <div className="flex justify-between">
+                                                <span className="font-medium">
+                                                    {enqueued}/{matched} enqueued
+                                                </span>
+                                                <span className="text-muted-foreground">{pct}%</span>
+                                            </div>
+                                            <div className="h-2 w-full rounded bg-gray-200 overflow-hidden">
+                                                <div className="h-2 bg-gray-900" style={{ width: `${pct}%` }} />
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">Skipped: {skippedMissing}</div>
+                                        </div>
                                     </div>
                                 </div>
                             </>

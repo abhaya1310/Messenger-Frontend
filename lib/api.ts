@@ -840,14 +840,29 @@ export async function fetchSyncStatus(): Promise<SyncStatus> {
 export async function fetchCampaigns(params: CampaignListParams = {}): Promise<CampaignListResponse> {
   const searchParams = new URLSearchParams();
 
+  if ((params as any).tab) searchParams.set('tab', String((params as any).tab));
   if (params.status) searchParams.set('status', params.status);
   if (params.type) searchParams.set('type', params.type);
-  if (params.page) searchParams.set('page', params.page.toString());
-  if (params.limit) searchParams.set('limit', params.limit.toString());
+
+  // New contract supports skip/limit; keep page/limit for backwards compatibility
+  if ((params as any).skip !== undefined) searchParams.set('skip', String((params as any).skip));
+  if (params.page !== undefined) searchParams.set('page', params.page.toString());
+  if (params.limit !== undefined) searchParams.set('limit', params.limit.toString());
 
   const queryString = searchParams.toString();
   const raw = await apiClient<any>(`/api/campaigns${queryString ? `?${queryString}` : ''}`);
   const data = unwrapApiResponse<any>(raw);
+
+  // New contract: { data: { items: Campaign[] } }
+  if (data && typeof data === 'object') {
+    const items = (data as any)?.items;
+    if (Array.isArray(items)) {
+      return {
+        campaigns: items as Campaign[],
+        pagination: (data as any)?.pagination,
+      };
+    }
+  }
 
   if (data && typeof data === 'object' && Array.isArray((data as any).campaigns)) {
     return {
@@ -876,9 +891,10 @@ export async function fetchCampaignsCreated(params: { limit?: number; skip?: num
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
   if (params.status !== undefined) searchParams.set('status', String(params.status));
+  searchParams.set('tab', 'created');
   const query = searchParams.toString();
 
-  const raw = await apiClient<any>(`/api/campaigns/created${query ? `?${query}` : ''}`);
+  const raw = await apiClient<any>(`/api/campaigns${query ? `?${query}` : ''}`);
   return unwrapApiResponse<any>(raw);
 }
 
@@ -887,9 +903,10 @@ export async function fetchCampaignRuns(params: { limit?: number; skip?: number;
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
   if (params.status !== undefined) searchParams.set('status', String(params.status));
+  searchParams.set('tab', 'runs');
   const query = searchParams.toString();
 
-  const raw = await apiClient<any>(`/api/campaigns/runs${query ? `?${query}` : ''}`);
+  const raw = await apiClient<any>(`/api/campaigns${query ? `?${query}` : ''}`);
   return unwrapApiResponse<any>(raw);
 }
 

@@ -29,8 +29,9 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
+    url.searchParams.set("tab", "runs");
     const query = url.searchParams.toString();
-    const backendUrl = `${getBackendBaseUrl()}/api/campaigns/runs${query ? `?${query}` : ""}`;
+    const backendUrl = `${getBackendBaseUrl()}/api/campaigns${query ? `?${query}` : ""}`;
 
     const res = await fetch(backendUrl, {
         method: "GET",
