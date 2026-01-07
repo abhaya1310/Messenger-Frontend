@@ -729,6 +729,7 @@ import type {
   OrgSettings,
   ServiceUpdate,
 } from './types/org-settings';
+import type { CreditsState } from './types/credits';
 
 /**
  * Generic API client with automatic org and auth headers
@@ -752,7 +753,10 @@ export async function apiClient<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  if (!token && orgId && !endpoint.startsWith('/api/campaign-config') && !endpoint.startsWith('/api/campaigns')) {
+  const isAnalyticsEndpoint = endpoint.startsWith('/api/analytics/');
+  if (isAnalyticsEndpoint && orgId) {
+    headers['X-ORG-ID'] = orgId;
+  } else if (!token && orgId && !endpoint.startsWith('/api/campaign-config') && !endpoint.startsWith('/api/campaigns')) {
     headers['X-ORG-ID'] = orgId;
   }
 
@@ -1200,6 +1204,11 @@ export async function previewAudienceCount(filter: SegmentFilter): Promise<Audie
     method: 'POST',
     body: JSON.stringify(filter),
   });
+  return response.data;
+}
+
+export async function fetchCreditsMe(): Promise<CreditsState> {
+  const response = await apiClient<{ success: boolean; data: CreditsState }>('/api/credits/me');
   return response.data;
 }
 

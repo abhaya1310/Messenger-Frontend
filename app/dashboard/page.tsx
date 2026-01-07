@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -23,145 +23,126 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import { getAuthToken } from "@/lib/auth";
 import {
   fetchDashboardOverview,
+  fetchAutoCampaignStats,
+  fetchCreditsMe,
   fetchSegmentCounts,
   fetchCustomers,
 } from "@/lib/api";
-import type { DashboardOverview, SegmentCounts } from "@/lib/types/campaign";
+import type { DashboardOverview, SegmentCounts, AutoCampaignStats } from "@/lib/types/campaign";
 import type { POSCustomer } from "@/lib/types/pos";
-import type { CreditsMeResponse, CreditsState } from "@/lib/types/credits";
+import type { CreditsState } from "@/lib/types/credits";
 
 export default function DashboardPage() {
   const { orgName } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [credits, setCredits] = useState<CreditsState | null>(null);
   const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [segmentsError, setSegmentsError] = useState<string | null>(null);
+  const [autoCampaignsError, setAutoCampaignsError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const autoRefreshRef = useRef<number | null>(null);
 
   // Analytics state - using new API types
   const [dashboardOverview, setDashboardOverview] = useState<DashboardOverview | null>(null);
   const [segmentCounts, setSegmentCounts] = useState<SegmentCounts | null>(null);
+  const [autoCampaignStats, setAutoCampaignStats] = useState<AutoCampaignStats | null>(null);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState<POSCustomer[]>([]);
 
   useEffect(() => {
     loadDashboardData();
+
+    autoRefreshRef.current = window.setInterval(() => {
+      loadDashboardData({ silent: true });
+    }, 60000);
+
+    return () => {
+      if (autoRefreshRef.current) {
+        window.clearInterval(autoRefreshRef.current);
+        autoRefreshRef.current = null;
+      }
+    };
   }, []);
 
-  async function loadDashboardData() {
-    setLoading(true);
-    setError(null);
+  async function loadDashboardData(opts?: { silent?: boolean }) {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    if (!opts?.silent) {
+      setLoading(true);
+    }
+
+    setOverviewError(null);
+    setSegmentsError(null);
+    setAutoCampaignsError(null);
     setCreditsError(null);
 
-    try {
-      const creditsPromise = (async () => {
-        const token = getAuthToken();
-        if (!token) {
-          throw new Error("Unauthorized");
-        }
+    const [overviewData, segmentsData, autoCampaignsData, customersData, creditsData] = await Promise.allSettled([
+      fetchDashboardOverview(),
+      fetchSegmentCounts(),
+      fetchAutoCampaignStats(),
+      fetchCustomers({ limit: 10, sortBy: "lastVisitAt", sortOrder: "desc" }),
+      fetchCreditsMe(),
+    ]);
 
-        const res = await fetch("/api/credits/me", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const data = (await res.json().catch(() => ({}))) as any;
-        if (!res.ok) {
-          throw new Error(data?.error || data?.message || "Failed to fetch credits");
-        }
-
-        const parsed = data as CreditsMeResponse;
-        return parsed.data;
-      })();
-
-      // Fetch all data in parallel using new API endpoints
-      const [overviewData, segmentsData, customersData, creditsData] = await Promise.allSettled([
-        fetchDashboardOverview(),
-        fetchSegmentCounts(),
-        fetchCustomers({ limit: 10, sortBy: 'lastVisitAt', sortOrder: 'desc' }),
-        creditsPromise,
-      ]);
-
-      if (overviewData.status === 'fulfilled') {
-        setDashboardOverview(overviewData.value);
-      }
-
-      if (segmentsData.status === 'fulfilled') {
-        setSegmentCounts(segmentsData.value);
-      }
-
-      if (customersData.status === 'fulfilled') {
-        // Filter customers with birthdays in next 30 days
-        const today = new Date();
-        const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-        const withUpcomingBirthdays = customersData.value.customers.filter(customer => {
-          if (!customer.dateOfBirth) return false;
-          const bday = new Date(customer.dateOfBirth);
-          const thisYearBday = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
-          if (thisYearBday < today) {
-            thisYearBday.setFullYear(today.getFullYear() + 1);
-          }
-          return thisYearBday >= today && thisYearBday <= thirtyDaysFromNow;
-        });
-
-        setUpcomingBirthdays(withUpcomingBirthdays.slice(0, 5));
-      }
-
-      if (creditsData.status === 'fulfilled') {
-        setCredits(creditsData.value);
-      } else {
-        setCredits(null);
-        setCreditsError(creditsData.reason instanceof Error ? creditsData.reason.message : "Failed to fetch credits");
-      }
-    } catch (err) {
-      console.error('Failed to load dashboard data:', err);
-      setError('Failed to load dashboard data. Using sample data.');
-      setCredits(null);
-      setCreditsError(err instanceof Error ? err.message : "Failed to fetch credits");
-    } finally {
-      setLoading(false);
+    if (overviewData.status === "fulfilled") {
+      setDashboardOverview(overviewData.value);
+    } else {
+      setOverviewError(overviewData.reason instanceof Error ? overviewData.reason.message : "Failed to refresh");
     }
+
+    if (segmentsData.status === "fulfilled") {
+      setSegmentCounts(segmentsData.value);
+    } else {
+      setSegmentsError(segmentsData.reason instanceof Error ? segmentsData.reason.message : "Failed to refresh");
+    }
+
+    if (autoCampaignsData.status === "fulfilled") {
+      setAutoCampaignStats(autoCampaignsData.value);
+    } else {
+      setAutoCampaignsError(
+        autoCampaignsData.reason instanceof Error ? autoCampaignsData.reason.message : "Failed to refresh"
+      );
+    }
+
+    if (customersData.status === "fulfilled") {
+      // Keep as stub for now (no dedicated dashboard endpoint exists per backend note)
+      const today = new Date();
+      const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const withUpcomingBirthdays = customersData.value.customers.filter((customer) => {
+        if (!customer.dateOfBirth) return false;
+        const bday = new Date(customer.dateOfBirth);
+        const thisYearBday = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
+        if (thisYearBday < today) {
+          thisYearBday.setFullYear(today.getFullYear() + 1);
+        }
+        return thisYearBday >= today && thisYearBday <= thirtyDaysFromNow;
+      });
+
+      setUpcomingBirthdays(withUpcomingBirthdays.slice(0, 5));
+    }
+
+    if (creditsData.status === "fulfilled") {
+      setCredits(creditsData.value);
+    } else {
+      setCreditsError(creditsData.reason instanceof Error ? creditsData.reason.message : "Failed to refresh");
+    }
+
+    setLoading(false);
+    loadingRef.current = false;
   }
 
-  // Derived stats with fallbacks - using new API structure
-  // Using segmentCounts for customer breakdown and dashboardOverview for campaign/message stats
-  const total = segmentCounts?.total || dashboardOverview?.customers.total || 0;
-
-  const frequencyStats = dashboardOverview ? [
-    { label: "Active Customers", value: dashboardOverview.customers.active, percent: total > 0 ? (dashboardOverview.customers.active / total) * 100 : 0 },
-    { label: "New Customers", value: dashboardOverview.customers.new, percent: total > 0 ? (dashboardOverview.customers.new / total) * 100 : 0 },
-    { label: "At Risk", value: dashboardOverview.customers.atRisk, percent: total > 0 ? (dashboardOverview.customers.atRisk / total) * 100 : 0 },
-    { label: "Lapsed", value: dashboardOverview.customers.lapsed, percent: total > 0 ? (dashboardOverview.customers.lapsed / total) * 100 : 0 },
-  ] : segmentCounts ? [
-    { label: "Active Customers", value: segmentCounts.recency.active, percent: total > 0 ? (segmentCounts.recency.active / total) * 100 : 0 },
-    { label: "Loyal Customers", value: segmentCounts.frequency.loyal, percent: total > 0 ? (segmentCounts.frequency.loyal / total) * 100 : 0 },
-    { label: "At Risk", value: segmentCounts.recency.at_risk, percent: total > 0 ? (segmentCounts.recency.at_risk / total) * 100 : 0 },
-    { label: "Lapsed", value: segmentCounts.recency.lapsed, percent: total > 0 ? (segmentCounts.recency.lapsed / total) * 100 : 0 },
-  ] : [
-    { label: "Active Customers", value: 0, percent: 0 },
-    { label: "Loyal Customers", value: 0, percent: 0 },
-    { label: "At Risk", value: 0, percent: 0 },
-    { label: "Lapsed", value: 0, percent: 0 },
-  ];
-
-  // Segment breakdown for additional visualization
-  const segmentBreakdown = segmentCounts ? {
-    frequency: [
-      { label: "New", value: segmentCounts.frequency.new, color: "bg-green-500" },
-      { label: "Returning", value: segmentCounts.frequency.returning, color: "bg-blue-500" },
-      { label: "Loyal", value: segmentCounts.frequency.loyal, color: "bg-purple-500" },
-      { label: "VIP", value: segmentCounts.frequency.vip, color: "bg-amber-500" },
-    ],
-    recency: [
-      { label: "Active", value: segmentCounts.recency.active, color: "bg-green-500" },
-      { label: "At Risk", value: segmentCounts.recency.at_risk, color: "bg-yellow-500" },
-      { label: "Lapsed", value: segmentCounts.recency.lapsed, color: "bg-red-500" },
-    ],
-  } : null;
+  const totalAutoCampaignSent = autoCampaignStats
+    ? (autoCampaignStats.birthday.sent || 0) +
+    (autoCampaignStats.anniversary.sent || 0) +
+    (autoCampaignStats.winback.sent || 0) +
+    (autoCampaignStats.festival.sent || 0) +
+    (autoCampaignStats.firstVisit.sent || 0) +
+    (autoCampaignStats.feedback.sent || 0)
+    : 0;
 
   const programCards = [
     {
@@ -178,44 +159,13 @@ export default function DashboardPage() {
       title: "Auto-campaigns",
       tone: "bg-[#f6f1ff]",
       metrics: [
-        { label: "Delivery Rate", value: `${dashboardOverview?.messages.deliveryRate?.toFixed(1) || 0}%` },
-        { label: "Read Rate", value: `${dashboardOverview?.messages.readRate?.toFixed(1) || 0}%` },
-        { label: "Total Sent", value: dashboardOverview?.campaigns.totalSent?.toLocaleString() || "0" },
+        { label: "Total Sent", value: totalAutoCampaignSent.toLocaleString() },
+        { label: "Birthday", value: (autoCampaignStats?.birthday.sent || 0).toLocaleString() },
+        { label: "Winback", value: (autoCampaignStats?.winback.sent || 0).toLocaleString() },
       ],
       href: "/auto-campaigns",
     },
-    {
-      title: "Customers",
-      tone: "bg-[#e9f9ed]",
-      metrics: [
-        { label: "Total", value: (dashboardOverview?.customers.total || segmentCounts?.total || 0).toLocaleString() },
-        { label: "Active", value: (dashboardOverview?.customers.active || segmentCounts?.recency.active || 0).toLocaleString() },
-        { label: "VIP", value: (dashboardOverview?.customers.vip || segmentCounts?.frequency.vip || 0).toLocaleString() },
-      ],
-      href: "/analytics",
-    },
-    {
-      title: "Revenue",
-      tone: "bg-[#fff3e6]",
-      metrics: [
-        { label: "Last 30 Days", value: dashboardOverview?.revenue.total30d ? `₹${dashboardOverview.revenue.total30d.toLocaleString()}` : "—" },
-        { label: "Avg Order", value: dashboardOverview?.revenue.avgOrderValue ? `₹${dashboardOverview.revenue.avgOrderValue.toLocaleString()}` : "—" },
-        { label: "Feedback", value: "—" },
-      ],
-      href: "/feedback",
-    },
   ];
-
-  const highlightStats = [
-    { label: "Total Sent", value: dashboardOverview?.campaigns.totalSent?.toLocaleString() || "0" },
-    { label: "Delivery Rate", value: `${dashboardOverview?.messages.deliveryRate?.toFixed(1) || 0}%` },
-    { label: "Read Rate", value: `${dashboardOverview?.messages.readRate?.toFixed(1) || 0}%` },
-    { label: "Customers", value: (dashboardOverview?.customers.total || segmentCounts?.total || 0).toLocaleString() },
-  ];
-
-  // Top customers from segment data (VIP + Loyal)
-  const vipCount = dashboardOverview?.customers.vip || segmentCounts?.frequency.vip || 0;
-  const loyalCount = dashboardOverview?.customers.loyal || segmentCounts?.frequency.loyal || 0;
 
   if (loading) {
     return (
@@ -240,11 +190,6 @@ export default function DashboardPage() {
         <p className="text-gray-600 max-w-2xl">
           Monitor your campaigns, customer engagement, and messaging performance in real-time.
         </p>
-        {error && (
-          <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-md">
-            {error}
-          </p>
-        )}
       </header>
 
       {/* Key Metrics */}
@@ -256,11 +201,16 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {(dashboardOverview?.customers.total || segmentCounts?.total || 0).toLocaleString()}
+              {(dashboardOverview?.customers.total || 0).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">
               {dashboardOverview?.customers.new || 0} new this period
             </p>
+            {overviewError && (
+              <p className="mt-2 text-xs text-amber-600" role="alert">
+                Failed to refresh
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -276,69 +226,16 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">
               {dashboardOverview?.campaigns.totalSent?.toLocaleString() || 0} total sent
             </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Delivery Rate</CardTitle>
-            <MessageCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardOverview?.messages.deliveryRate?.toFixed(1) || 0}%
-            </div>
-            <p className="text-xs text-muted-foreground">
-              of all messages delivered
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Read Rate</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardOverview?.messages.readRate?.toFixed(1) || 0}%
-            </div>
-            <p className="text-xs text-muted-foreground">
-              of delivered messages read
-            </p>
+            {overviewError && (
+              <p className="mt-2 text-xs text-amber-600" role="alert">
+                Failed to refresh
+              </p>
+            )}
           </CardContent>
         </Card>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between">
-            <div>
-              <CardTitle>Customer Overview</CardTitle>
-              <CardDescription>
-                Customer distribution and activity
-              </CardDescription>
-            </div>
-            <Info className="h-4 w-4 text-gray-400" />
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {frequencyStats.map((stat) => (
-              <div key={stat.label}>
-                <div className="flex justify-between text-sm font-medium text-gray-700">
-                  <span>{stat.label}</span>
-                  <span>{stat.value.toLocaleString()}</span>
-                </div>
-                <div className="mt-2 h-2 w-full rounded-full bg-gray-100">
-                  <div
-                    className="h-2 rounded-full bg-[var(--connectnow-accent)]"
-                    style={{ width: `${Math.min(stat.percent, 100)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
         <Card className="bg-[#ffece3]">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -390,7 +287,7 @@ export default function DashboardPage() {
           <h2 className="text-xl font-semibold">
             Program Performance
           </h2>
-          <Button variant="ghost" size="sm" className="gap-1" onClick={loadDashboardData}>
+          <Button variant="ghost" size="sm" className="gap-1" onClick={() => loadDashboardData()}>
             <RefreshCcw className="h-4 w-4" />
             Refresh
           </Button>
@@ -422,77 +319,71 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Message Highlights</CardTitle>
-            <Info className="h-4 w-4 text-gray-400" />
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              {highlightStats.map((stat) => (
-                <div key={stat.label}>
-                  <p className="text-sm text-gray-500">{stat.label}</p>
-                  <p className="text-2xl font-semibold">{stat.value}</p>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-6 text-sm font-medium">
-              <div className="flex items-center gap-2 text-green-600">
-                <span className="h-2 w-2 rounded-full bg-green-600" />
-                Delivered
-              </div>
-              <div className="flex items-center gap-2 text-blue-500">
-                <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Read
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Customer Segments</h2>
+            <p className="text-sm text-gray-600">Frequency and recency distribution</p>
+          </div>
+          <Button variant="ghost" size="sm" className="gap-1" onClick={() => loadDashboardData()}>
+            <RefreshCcw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
 
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>Customer Segments</CardTitle>
+            <CardTitle>Segments</CardTitle>
             <Info className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            {segmentBreakdown ? (
-              <div className="space-y-6">
-                {/* Frequency Segments */}
-                <div>
-                  <p className="text-sm font-medium text-gray-500 mb-3">By Visit Frequency</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {segmentBreakdown.frequency.map((segment) => (
-                      <div key={segment.label} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <span className={`h-2 w-2 rounded-full ${segment.color}`} />
-                          <span className="text-sm">{segment.label}</span>
-                        </div>
-                        <span className="font-semibold">{segment.value.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {/* Recency Segments */}
-                <div>
-                  <p className="text-sm font-medium text-gray-500 mb-3">By Recency</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {segmentBreakdown.recency.map((segment) => (
-                      <div key={segment.label} className="text-center p-2 bg-gray-50 rounded-lg">
-                        <span className={`inline-block h-2 w-2 rounded-full ${segment.color} mb-1`} />
-                        <p className="text-lg font-semibold">{segment.value.toLocaleString()}</p>
-                        <p className="text-xs text-gray-500">{segment.label}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p>No customer data available yet</p>
-              </div>
+            {segmentsError && (
+              <p className="mb-4 text-xs text-amber-600" role="alert">
+                Failed to refresh
+              </p>
             )}
+
+            <div className="space-y-6">
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-3">By Visit Frequency</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <span className="text-sm">New</span>
+                    <span className="font-semibold">{(segmentCounts?.frequency.new || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <span className="text-sm">Returning</span>
+                    <span className="font-semibold">{(segmentCounts?.frequency.returning || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <span className="text-sm">Loyal</span>
+                    <span className="font-semibold">{(segmentCounts?.frequency.loyal || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <span className="text-sm">VIP</span>
+                    <span className="font-semibold">{(segmentCounts?.frequency.vip || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-3">By Recency</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-lg font-semibold">{(segmentCounts?.recency.active || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">Active</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-lg font-semibold">{(segmentCounts?.recency.at_risk || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">At Risk</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-lg font-semibold">{(segmentCounts?.recency.lapsed || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">Lapsed</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -546,7 +437,7 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-semibold text-gray-900">WhatsApp Credits</h2>
             <p className="text-sm text-gray-600">Live available credits used for campaign sending.</p>
           </div>
-          <Button variant="outline" onClick={loadDashboardData}>
+          <Button variant="outline" onClick={() => loadDashboardData()}>
             Refresh
           </Button>
         </div>
@@ -588,6 +479,12 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {autoCampaignsError && (
+          <p className="text-xs text-amber-600" role="alert">
+            Some widgets failed to refresh
+          </p>
+        )}
       </section>
     </div>
   );
