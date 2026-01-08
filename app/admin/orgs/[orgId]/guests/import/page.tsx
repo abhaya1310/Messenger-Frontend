@@ -24,11 +24,14 @@ type ImportStatusResponse = {
         jobId?: string;
         status?: "queued" | "processing" | "completed" | "failed" | string;
         stats?: {
+            totalRows?: number;
+            processedRows?: number;
             created?: number;
             updated?: number;
             failed?: number;
-            total?: number;
+            deduped?: number;
         };
+        lastError?: string | null;
         error?: string;
         message?: string;
         updatedAt?: string;
@@ -65,14 +68,22 @@ export default function AdminOrgGuestImportPage() {
     const [jobId, setJobId] = useState<string | null>(null);
     const [jobStatus, setJobStatus] = useState<string | null>(null);
     const [deduped, setDeduped] = useState<boolean | null>(null);
-    const [stats, setStats] = useState<{ created?: number; updated?: number; failed?: number; total?: number } | null>(null);
+    const [stats, setStats] = useState<{
+        totalRows?: number;
+        processedRows?: number;
+        created?: number;
+        updated?: number;
+        failed?: number;
+        deduped?: number;
+    } | null>(null);
+    const [lastError, setLastError] = useState<string | null>(null);
 
     const pollRef = useRef<number | null>(null);
 
     const canUpload = useMemo(() => {
         if (!file) return false;
         const name = (file.name || "").toLowerCase();
-        return name.endsWith(".csv") || name.endsWith(".xlsx");
+        return name.endsWith(".csv");
     }, [file]);
 
     const stopPolling = () => {
@@ -100,13 +111,17 @@ export default function AdminOrgGuestImportPage() {
 
         const status = (json as any)?.data?.status ?? (json as any)?.status;
         const s = (json as any)?.data?.stats ?? (json as any)?.stats;
+        const le = (json as any)?.data?.lastError;
         setJobStatus(status || null);
+        setLastError(typeof le === "string" ? le : le === null ? null : null);
         if (s && typeof s === "object") {
             setStats({
+                totalRows: typeof s.totalRows === "number" ? s.totalRows : undefined,
+                processedRows: typeof s.processedRows === "number" ? s.processedRows : undefined,
                 created: typeof s.created === "number" ? s.created : undefined,
                 updated: typeof s.updated === "number" ? s.updated : undefined,
                 failed: typeof s.failed === "number" ? s.failed : undefined,
-                total: typeof s.total === "number" ? s.total : undefined,
+                deduped: typeof s.deduped === "number" ? s.deduped : undefined,
             });
         }
 
@@ -124,7 +139,7 @@ export default function AdminOrgGuestImportPage() {
             } catch {
                 // ignore transient polling errors
             }
-        }, 3000);
+        }, 2500);
     };
 
     const onUpload = async () => {
@@ -134,7 +149,7 @@ export default function AdminOrgGuestImportPage() {
             return;
         }
         if (!canUpload) {
-            setError("Only .csv or .xlsx files are supported.");
+            setError("Only .csv files are supported.");
             return;
         }
 
@@ -198,6 +213,11 @@ export default function AdminOrgGuestImportPage() {
         ? `/api/admin/org/${encodeURIComponent(orgId)}/guests/import/${encodeURIComponent(jobId)}/errors.csv`
         : null;
 
+    const statusLower = (jobStatus || "").toLowerCase();
+    const processedRows = typeof stats?.processedRows === "number" ? stats.processedRows : 0;
+    const totalRows = typeof stats?.totalRows === "number" ? stats.totalRows : 0;
+    const progressPct = totalRows > 0 ? Math.min(100, Math.round((processedRows / totalRows) * 100)) : 0;
+
     useEffect(() => {
         setSelectedOrgId(orgId);
         return () => stopPolling();
@@ -210,7 +230,7 @@ export default function AdminOrgGuestImportPage() {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="py-6">
                         <h1 className="text-3xl font-bold text-gray-900">Bulk Upload Guests</h1>
-                        <p className="text-gray-600 mt-1">Upload a .csv or .xlsx to import guest data for this organisation.</p>
+                        <p className="text-gray-600 mt-1">Upload a .csv to import guest data for this organisation.</p>
                     </div>
                 </div>
             </header>
@@ -243,15 +263,23 @@ export default function AdminOrgGuestImportPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="guest-import-file">Excel/CSV file</Label>
+                            <Label htmlFor="guest-import-file">CSV file</Label>
                             <Input
                                 id="guest-import-file"
                                 type="file"
-                                accept=".csv,.xlsx"
+                                accept=".csv"
                                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                                 disabled={uploading}
                             />
-                            <p className="text-xs text-muted-foreground">Accepted: .xlsx, .csv. Field name: file.</p>
+                            <p className="text-xs text-muted-foreground">Accepted: .csv. Field name: file.</p>
+                            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                                <div className="font-medium text-foreground">Expected header</div>
+                                <div className="font-mono">phone,name,email,dob,anniversary</div>
+                                <div>
+                                    Supported columns (case-insensitive):
+                                    <span className="font-mono"> phone</span>, <span className="font-mono">name</span>, <span className="font-mono">email</span>, <span className="font-mono">dob</span>, <span className="font-mono">anniversary</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div className="flex gap-2">
@@ -305,12 +333,30 @@ export default function AdminOrgGuestImportPage() {
                                 <div className="text-lg font-semibold">{formatNumber(stats?.failed)}</div>
                             </div>
                             <div>
-                                <div className="text-xs text-muted-foreground">Total</div>
-                                <div className="text-lg font-semibold">{formatNumber(stats?.total)}</div>
+                                <div className="text-xs text-muted-foreground">Deduped</div>
+                                <div className="text-lg font-semibold">{formatNumber(stats?.deduped)}</div>
                             </div>
                         </div>
 
-                        {errorsCsvHref ? (
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Progress</span>
+                                <span className="font-medium">
+                                    {totalRows > 0 ? `${formatNumber(processedRows)}/${formatNumber(totalRows)}` : "—"}
+                                </span>
+                            </div>
+                            <div className="h-2 w-full rounded bg-gray-200 overflow-hidden">
+                                <div className="h-2 bg-gray-900" style={{ width: `${progressPct}%` }} />
+                            </div>
+                        </div>
+
+                        {statusLower === "failed" && lastError ? (
+                            <div className="text-sm text-destructive" role="alert">
+                                {lastError}
+                            </div>
+                        ) : null}
+
+                        {errorsCsvHref && statusLower === "failed" ? (
                             <div className="flex gap-2">
                                 <Button variant="outline" asChild className="gap-2" disabled={!jobId}>
                                     <a href={errorsCsvHref} target="_blank" rel="noreferrer">
