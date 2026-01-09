@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, RefreshCw, UploadCloud, Download } from "lucide-react";
+import { Loader2, UploadCloud } from "lucide-react";
 import { clearAuth, getAuthToken } from "@/lib/auth";
 import { setSelectedOrgId } from "@/lib/selected-org";
 
@@ -18,43 +18,8 @@ type ImportUploadResponse = {
     deduped?: boolean;
 };
 
-type ImportStatusResponse = {
-    success: boolean;
-    data?: {
-        jobId?: string;
-        status?: "queued" | "processing" | "completed" | "failed" | string;
-        stats?: {
-            totalRows?: number;
-            processedRows?: number;
-            created?: number;
-            updated?: number;
-            failed?: number;
-            deduped?: number;
-        };
-        lastError?: string | null;
-        error?: string;
-        message?: string;
-        updatedAt?: string;
-        createdAt?: string;
-    };
-    jobId?: string;
-    status?: string;
-    stats?: any;
-    error?: string;
-    message?: string;
-};
-
 async function safeJson(res: Response) {
     return (await res.json().catch(() => ({}))) as any;
-}
-
-function formatNumber(value?: number): string {
-    if (typeof value !== "number" || Number.isNaN(value)) return "—";
-    try {
-        return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
-    } catch {
-        return String(value);
-    }
 }
 
 export default function AdminOrgGuestImportPage() {
@@ -65,82 +30,12 @@ export default function AdminOrgGuestImportPage() {
     const [file, setFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [jobId, setJobId] = useState<string | null>(null);
-    const [jobStatus, setJobStatus] = useState<string | null>(null);
-    const [deduped, setDeduped] = useState<boolean | null>(null);
-    const [stats, setStats] = useState<{
-        totalRows?: number;
-        processedRows?: number;
-        created?: number;
-        updated?: number;
-        failed?: number;
-        deduped?: number;
-    } | null>(null);
-    const [lastError, setLastError] = useState<string | null>(null);
-
-    const pollRef = useRef<number | null>(null);
 
     const canUpload = useMemo(() => {
         if (!file) return false;
         const name = (file.name || "").toLowerCase();
         return name.endsWith(".csv");
     }, [file]);
-
-    const stopPolling = () => {
-        if (pollRef.current) {
-            window.clearInterval(pollRef.current);
-            pollRef.current = null;
-        }
-    };
-
-    const fetchStatus = async (id: string) => {
-        const token = getAuthToken();
-        if (!token) throw new Error("Unauthorized");
-
-        const res = await fetch(`/api/admin/org/${encodeURIComponent(orgId)}/guests/import/${encodeURIComponent(id)}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        });
-
-        const json = (await safeJson(res)) as ImportStatusResponse;
-        if (!res.ok) {
-            throw new Error((json as any)?.error || (json as any)?.message || "Failed to fetch job status.");
-        }
-
-        const status = (json as any)?.data?.status ?? (json as any)?.status;
-        const s = (json as any)?.data?.stats ?? (json as any)?.stats;
-        const le = (json as any)?.data?.lastError;
-        setJobStatus(status || null);
-        setLastError(typeof le === "string" ? le : le === null ? null : null);
-        if (s && typeof s === "object") {
-            setStats({
-                totalRows: typeof s.totalRows === "number" ? s.totalRows : undefined,
-                processedRows: typeof s.processedRows === "number" ? s.processedRows : undefined,
-                created: typeof s.created === "number" ? s.created : undefined,
-                updated: typeof s.updated === "number" ? s.updated : undefined,
-                failed: typeof s.failed === "number" ? s.failed : undefined,
-                deduped: typeof s.deduped === "number" ? s.deduped : undefined,
-            });
-        }
-
-        return String(status || "").toLowerCase();
-    };
-
-    const startPolling = (id: string) => {
-        stopPolling();
-        pollRef.current = window.setInterval(async () => {
-            try {
-                const st = await fetchStatus(id);
-                if (st === "completed" || st === "failed") {
-                    stopPolling();
-                }
-            } catch {
-                // ignore transient polling errors
-            }
-        }, 2500);
-    };
 
     const onUpload = async () => {
         setError(null);
@@ -183,12 +78,9 @@ export default function AdminOrgGuestImportPage() {
                 throw new Error("Upload succeeded but jobId was missing.");
             }
 
-            setJobId(nextJobId);
-            setJobStatus((json as any)?.status || "queued");
-            setDeduped(typeof (json as any)?.deduped === "boolean" ? (json as any).deduped : null);
-
-            await fetchStatus(nextJobId);
-            startPolling(nextJobId);
+            router.push(
+                `/admin/orgs/${encodeURIComponent(orgId)}/guests/import/${encodeURIComponent(nextJobId)}`
+            );
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to upload file.");
         } finally {
@@ -196,31 +88,8 @@ export default function AdminOrgGuestImportPage() {
         }
     };
 
-    const onRefreshStatus = async () => {
-        if (!jobId) return;
-        setError(null);
-        try {
-            const st = await fetchStatus(jobId);
-            if (st === "completed" || st === "failed") {
-                stopPolling();
-            }
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to refresh status.");
-        }
-    };
-
-    const errorsCsvHref = jobId
-        ? `/api/admin/org/${encodeURIComponent(orgId)}/guests/import/${encodeURIComponent(jobId)}/errors.csv`
-        : null;
-
-    const statusLower = (jobStatus || "").toLowerCase();
-    const processedRows = typeof stats?.processedRows === "number" ? stats.processedRows : 0;
-    const totalRows = typeof stats?.totalRows === "number" ? stats.totalRows : 0;
-    const progressPct = totalRows > 0 ? Math.min(100, Math.round((processedRows / totalRows) * 100)) : 0;
-
     useEffect(() => {
         setSelectedOrgId(orgId);
-        return () => stopPolling();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orgId]);
 
@@ -291,87 +160,6 @@ export default function AdminOrgGuestImportPage() {
                     </CardContent>
                 </Card>
 
-                <Card>
-                    <CardHeader>
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <CardTitle>Import job</CardTitle>
-                                <CardDescription>Polls status every few seconds while queued/processing.</CardDescription>
-                            </div>
-                            <Button variant="outline" onClick={onRefreshStatus} disabled={!jobId} className="gap-2">
-                                <RefreshCw className="h-4 w-4" />
-                                Refresh
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <div className="text-xs text-muted-foreground">Job ID</div>
-                                <div className="font-mono text-sm break-all">{jobId || "—"}</div>
-                            </div>
-                            <div className="space-y-1">
-                                <div className="text-xs text-muted-foreground">Status</div>
-                                <div className="text-sm font-medium">{jobStatus || "—"}</div>
-                                {deduped !== null ? (
-                                    <div className="text-xs text-muted-foreground">Deduped: {deduped ? "Yes" : "No"}</div>
-                                ) : null}
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div>
-                                <div className="text-xs text-muted-foreground">Created</div>
-                                <div className="text-lg font-semibold">{formatNumber(stats?.created)}</div>
-                            </div>
-                            <div>
-                                <div className="text-xs text-muted-foreground">Updated</div>
-                                <div className="text-lg font-semibold">{formatNumber(stats?.updated)}</div>
-                            </div>
-                            <div>
-                                <div className="text-xs text-muted-foreground">Failed</div>
-                                <div className="text-lg font-semibold">{formatNumber(stats?.failed)}</div>
-                            </div>
-                            <div>
-                                <div className="text-xs text-muted-foreground">Deduped</div>
-                                <div className="text-lg font-semibold">{formatNumber(stats?.deduped)}</div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">Progress</span>
-                                <span className="font-medium">
-                                    {totalRows > 0 ? `${formatNumber(processedRows)}/${formatNumber(totalRows)}` : "—"}
-                                </span>
-                            </div>
-                            <div className="h-2 w-full rounded bg-gray-200 overflow-hidden">
-                                <div className="h-2 bg-gray-900" style={{ width: `${progressPct}%` }} />
-                            </div>
-                        </div>
-
-                        {statusLower === "failed" && lastError ? (
-                            <div className="text-sm text-destructive" role="alert">
-                                {lastError}
-                            </div>
-                        ) : null}
-
-                        {errorsCsvHref && statusLower === "failed" ? (
-                            <div className="flex gap-2">
-                                <Button variant="outline" asChild className="gap-2" disabled={!jobId}>
-                                    <a href={errorsCsvHref} target="_blank" rel="noreferrer">
-                                        <Download className="h-4 w-4" />
-                                        Download errors.csv
-                                    </a>
-                                </Button>
-                            </div>
-                        ) : null}
-
-                        <div className="text-xs text-muted-foreground">
-                            Processing is async and usually handled by cron. If status stays queued/processing for a long time, ensure the scheduler is running.
-                        </div>
-                    </CardContent>
-                </Card>
             </main>
         </div>
     );
